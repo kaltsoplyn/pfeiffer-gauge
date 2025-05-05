@@ -1,0 +1,21 @@
+{
+    "C_Cpp.intelliSenseEngine": "default",
+    "idf.espIdfPathWin": "C:\\Users\\kaltsoplyn\\esp\\v5.4.1\\esp-idf",
+    "idf.pythonInstallPath": "C:\\Users\\kaltsoplyn\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
+    "idf.openOcdConfigs": [
+        "board/esp32c6-builtin.cfg"
+    ],
+    "idf.portWin": "COM6",
+    "idf.toolsPathWin": "C:\\Users\\kaltsoplyn\\.espressif",
+    "files.associations": {
+        "freertos.h": "c",
+        "uart.h": "c",
+        "esp_netif.h": "c",
+        "adc_cali_scheme.h": "c",
+        "internal_temp_sensor.h": "c"
+    },
+    "idf.flashType": "UART",
+    "idf.customExtraVars": {
+        "IDF_TARGET": "esp32c6"
+    }
+}
