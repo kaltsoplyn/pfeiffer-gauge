@@ -118,11 +118,21 @@ void update_display_internal_temp(void *arg) {
 
 void app_main(void)
 {
+    // Initialize logging first
+    esp_log_level_set("*", ESP_LOG_INFO);  // Set global log level
+    ESP_LOGI(TAG, "Starting Pfeiffer CMR362 controller...");
+
+    // Add delay to ensure UART is ready
+    vTaskDelay(pdMS_TO_TICKS(100));
+
     t0 = esp_timer_get_time() / 1000.0f; // start time of the app
 
     // Initialize components
-    network_comp_init();
-    
+    esp_err_t lvgl_init_err = lvgl_display_init();
+    if (lvgl_init_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize LVGL display!\n%s", esp_err_to_name(lvgl_init_err));
+    }
+
     esp_err_t pressure_init_err = pressure_meas_init(); // Initialize pressure component (ADC, mutex, state)
     if (pressure_init_err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize pressure measurement component!\n%s", esp_err_to_name(pressure_init_err));  
@@ -133,16 +143,18 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to initialize internal temperature sensor!\n%s", esp_err_to_name(temp_init_err));  
     }
 
-    lvgl_display_init();
-
-    printf("Pfeiffer CMR362");
+    esp_err_t network_init_err = network_comp_init();
+    if (network_init_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize network component.\n%s", esp_err_to_name(network_init_err));
+    }
 
     state = (State){
         .sampling_interval_ms = DEFAULT_SAMPLING_INTERVAL_MS,
-        .is_sampling_active = true
+        .is_sampling_active = true,
+        .internal_temp = 0.0f
     };
 
-    
+    ESP_LOGI(TAG, "Pfeiffer CMR362 - Initialization complete");
 
     //if (MOCK) mock_previous_adc = 2000;
 

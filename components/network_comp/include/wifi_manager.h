@@ -21,7 +21,7 @@ esp_err_t wifi_init(void);
 /**
  * @brief Initialize WiFi in Access Point mode
  */
-void wifi_init_softap(void);
+esp_err_t wifi_init_softap(void);
 
 /**
  * @brief Scan for available networks
@@ -37,7 +37,7 @@ esp_err_t wifi_scan_networks(wifi_ap_record_t *ap_info, uint16_t *ap_count);
  * @param ssid Network SSID
  * @param password Network password
  */
-void wifi_connect_sta(const char *ssid, const char *password);
+esp_err_t wifi_connect_sta(const char *ssid, const char *password);
 
 /**
  * @brief Get current WiFi connection status
@@ -72,4 +72,4 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
 }
 #endif
 
-#endif // WIFI_MANAGER_H
+#endif // WIFI_MANAGER_H;

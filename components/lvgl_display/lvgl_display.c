@@ -2,6 +2,7 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
+#include "esp_log.h"
 #include "driver/gpio.h"
 #include "esp_lvgl_port.h"
 #include "lvgl.h"
@@ -24,6 +25,8 @@
 #define LCD_H_RES           320
 #define LCD_V_RES           172
 
+static const char *TAG = "LVGL";
+
 static lv_color_t green;
 static lv_color_t magenta;
 
@@ -41,14 +44,13 @@ void lvgl_display_backlight(bool on) {
 }
 
 
-void lvgl_display_init(void)
+esp_err_t lvgl_display_init(void)
 {
     // Backlight configuration
     gpio_config_t bk_gpio_config = {
         .mode = GPIO_MODE_OUTPUT,
         .pin_bit_mask = 1ULL << LCD_PIN_NUM_BK_LIGHT
     };
-    ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
 
     // SPI bus configuration
     spi_bus_config_t buscfg = {
@@ -59,7 +61,6 @@ void lvgl_display_init(void)
         .quadhd_io_num = -1,
         .max_transfer_sz = LCD_H_RES * LCD_V_RES * 2
     };
-    ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
 
     // LCD IO configuration
     esp_lcd_panel_io_handle_t io_handle = NULL;
@@ -72,8 +73,7 @@ void lvgl_display_init(void)
         .spi_mode = 0,
         .trans_queue_depth = 10,
     };
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_config, &io_handle));
-
+    
     // ST7789 panel configuration with proper initialization commands
     esp_lcd_panel_handle_t panel_handle = NULL;
     esp_lcd_panel_dev_config_t panel_config = {
@@ -82,25 +82,47 @@ void lvgl_display_init(void)
         .bits_per_pixel = 16,
         .vendor_config = NULL
     };
-    ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle));
+
+    // Error checks
+    esp_err_t ret = gpio_config(&bk_gpio_config);
+    ret = ret == ESP_OK ? spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO) : ret;
+    ret = ret == ESP_OK ? esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_config, &io_handle) : ret;
+    ret = ret == ESP_OK ? esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle) : ret;
+    if ( ret != ESP_OK ) {
+        ESP_LOGE(TAG, "Failed to configure display!\n%s", esp_err_to_name(ret));
+        return ret;
+    }
     
     // Reset the panel
-    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
+    ret = esp_lcd_panel_reset(panel_handle);
     
     // Initialize the panel with custom commands
-    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
+    ret = ret == ESP_OK ? esp_lcd_panel_init(panel_handle) : ret;
+
+    if ( ret != ESP_OK ) {
+        ESP_LOGE(TAG, "Failed to intitialize display!\n%s", esp_err_to_name(ret));
+        return ret;
+    }
     
     // Specific configuration for Waveshare 1.47" display
-    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_handle, true));
-    ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, true));
-    ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, false, true));
-    ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, 0, 34)); // Y offset for 172px height
+    ret = esp_lcd_panel_invert_color(panel_handle, true);
+    ret = ret == ESP_OK ? esp_lcd_panel_swap_xy(panel_handle, true) : ret;
+    ret = ret == ESP_OK ? esp_lcd_panel_mirror(panel_handle, false, true) : ret;
+    ret = ret == ESP_OK ? esp_lcd_panel_set_gap(panel_handle, 0, 34) : ret; // Y offset for 172px height
+    if ( ret != ESP_OK ) {
+        ESP_LOGE(TAG, "Failed to apply specific config to ST7789 display!\n%s", esp_err_to_name(ret));
+        return ret;
+    }
 
     green = lv_color_make(255,0,255);
     magenta = lv_color_make(255,255,0);
     
     // Turn on display
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
+    ret = esp_lcd_panel_disp_on_off(panel_handle, true);
+    if ( ret != ESP_OK ) {
+        ESP_LOGE(TAG, "Failed to turn on display!\n%s", esp_err_to_name(ret));
+        return ret;
+    }
 
     // LVGL initialization
     const lvgl_port_cfg_t lvgl_cfg = {
@@ -110,7 +132,11 @@ void lvgl_display_init(void)
         .task_max_sleep_ms = 500,
         .timer_period_ms = 5
     };
-    ESP_ERROR_CHECK(lvgl_port_init(&lvgl_cfg));
+    ret = lvgl_port_init(&lvgl_cfg);
+    if ( ret != ESP_OK ) {
+        ESP_LOGE(TAG, "Failed initialize LVGL portation!\n%s", esp_err_to_name(ret));
+        return ret;
+    }
 
     // LVGL display configuration
     const lvgl_port_display_cfg_t disp_cfg = {
@@ -158,6 +184,7 @@ void lvgl_display_init(void)
     lv_obj_set_size(ipaddr_label, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_pad_all(ipaddr_label, 5, 0);
     lv_obj_align(ipaddr_label, LV_ALIGN_BOTTOM_RIGHT, -10, -6);
+    lv_label_set_text(ipaddr_label, "IP: 0.0.0.0");
     
     // internal temperature label
     int_temp_label = lv_label_create(screen1);
@@ -166,6 +193,7 @@ void lvgl_display_init(void)
     lv_obj_set_size(int_temp_label, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_pad_all(int_temp_label, 5, 0);
     lv_obj_align(int_temp_label, LV_ALIGN_BOTTOM_LEFT, 10, -6);
+    lv_label_set_text(int_temp_label, "[SoC Temp]");
 
     // buffer full percentage label
     buffer_full_label = lv_label_create(screen1);
@@ -174,11 +202,14 @@ void lvgl_display_init(void)
     lv_obj_set_size(buffer_full_label, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_pad_all(buffer_full_label, 5, 0);
     lv_obj_align(buffer_full_label, LV_ALIGN_TOP_RIGHT, -10, 6);
+    lv_label_set_text(buffer_full_label, "[data buffer %%]");
 
     lv_scr_load(screen1);
     
     // Enable backlight
     lvgl_display_backlight(true);
+
+    return ret;
 }
 
 

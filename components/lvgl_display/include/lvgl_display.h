@@ -6,14 +6,19 @@ extern "C" {
 
 #define PRESSURE_GAUGE_NAME "Pfeiffer CMR362"
 
+
 /**
- * @brief Initializes the LVGL display.
+ * @brief Initialize the LVGL display.
  *
- * This function sets up and configures the LVGL display for use. It should
- * be called during the initialization phase of the application to ensure
- * the display is properly prepared for rendering graphical content.
+ * This function sets up and initializes the LVGL display driver, preparing it
+ * for rendering graphical content. It must be called before using any LVGL
+ * display-related functionality.
+ *
+ * @return
+ *     - ESP_OK: Initialization was successful.
+ *     - Appropriate error code from esp_err_t if initialization fails.
  */
-void lvgl_display_init(void);
+esp_err_t lvgl_display_init(void);
 
 /**
  * @brief Displays the pressure value on the LVGL display.
@@ -37,16 +42,16 @@ void lvgl_display_pressure(float pressure, float FS);
  */
 void lvgl_display_ipaddr(const char* ipaddr);
 
+
 /**
  * @brief Displays the internal temperature on the LVGL display.
  *
- * This function is responsible for rendering the internal temperature
- * information on the LVGL display. It can also display the provided
- * IP address as part of the information.
+ * This function is used to update the LVGL display with the provided
+ * temperature value. The temperature is expected to be passed as a
+ * string, which will be rendered on the display.
  *
- * @param ipaddr A pointer to a null-terminated string containing the IP address
- *               to be displayed. If no IP address is available, this parameter
- *               can be set to NULL or an empty string.
+ * @param temp A null-terminated string representing the temperature
+ *             to be displayed (e.g., "25.3°C").
  */
 void lvgl_display_internal_temp(const char* temp);
 

@@ -11,6 +11,12 @@ static const char *TAG = "WiFiManager";
 static esp_netif_t *sta_netif = NULL;
 static esp_netif_t *ap_netif = NULL;
 static bool wifi_initialized = false;
+static bool s_should_connect_on_sta_start = false; // Flag to control auto-connection
+
+// Event group to signal Wi-Fi connection events
+static EventGroupHandle_t wifi_event_group;
+const int WIFI_CONNECTED_BIT = BIT0;
+const int WIFI_FAIL_BIT      = BIT1; // Could be from disconnect or timeout
 
 // Forward declaration for the event handler
 void wifi_event_handler(void* arg, esp_event_base_t event_base,
@@ -22,30 +28,51 @@ esp_err_t wifi_init() {
         return ESP_OK;
     }
 
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_err_t ret = esp_netif_init();
+    ret = ret == ESP_OK ? esp_event_loop_create_default() : ret;
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init event loop: %s", esp_err_to_name(ret));
+        // No return here, as other parts of wifi_init might still be useful
+        // or we might want to proceed to AP mode.
+        // The caller of wifi_init should check its return.
+    }
 
     // Create default STA and AP interfaces here, they can be configured later
     sta_netif = esp_netif_create_default_wifi_sta();
     ap_netif = esp_netif_create_default_wifi_ap();
-    assert(sta_netif); // Ensure creation succeeded
-    assert(ap_netif);
+    if (!sta_netif || !ap_netif) {
+        ESP_LOGE(TAG, "Failed to create default interfaces");
+        return ESP_FAIL;
+    }
+
+    wifi_event_group = xEventGroupCreate();
+    if (wifi_event_group == NULL) {
+        ESP_LOGE(TAG, "Failed to create wifi_event_group");
+        return ESP_FAIL; // Critical failure
+    }
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ret = esp_wifi_init(&cfg);
 
     // Register event handlers
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+    ret = ret == ESP_OK ? esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
                                                         &wifi_event_handler,
                                                         NULL,
-                                                        NULL));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                        NULL) 
+                                                        : ret;
+    ret = ret == ESP_OK ? esp_event_handler_instance_register(IP_EVENT,
                                                         IP_EVENT_STA_GOT_IP,
                                                         &wifi_event_handler,
                                                         NULL,
-                                                        NULL));
+                                                        NULL)
+                                                        : ret;
+
     // Note: You might need to unregister these if you implement deinitialization
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register event handlers: %s", esp_err_to_name(ret));
+        return ret;
+    }
 
     wifi_initialized = true;
     ESP_LOGI(TAG, "WiFi initialized");
@@ -53,7 +80,10 @@ esp_err_t wifi_init() {
     return ESP_OK;
 }
 
-void wifi_init_softap(void) {
+esp_err_t wifi_init_softap(void) {
+    // When starting SoftAP, we generally don't want the STA part to auto-connect
+    // unless explicitly told to by a subsequent wifi_connect_sta call.
+    s_should_connect_on_sta_start = false;
     if (!wifi_initialized) wifi_init();
 
     // First create the AP interface
@@ -74,16 +104,23 @@ void wifi_init_softap(void) {
     };
 
     // Set mode to APSTA to allow scanning and potential STA connection later
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
+    esp_err_t ret = esp_wifi_set_mode(WIFI_MODE_APSTA);
+    ret = ret == ESP_OK ? esp_wifi_set_config(WIFI_IF_AP, &wifi_config) : ret;
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "WiFi AP config failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
     
-    esp_err_t start_err = esp_wifi_start();
-    if (start_err != ESP_OK) {
-        ESP_LOGE(TAG, "WiFi start failed: %s", esp_err_to_name(start_err));
-        return; // Don't proceed if start fails
+    ret = esp_wifi_start();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "WiFi start failed: %s", esp_err_to_name(ret));
+        return ret; // Don't proceed if start fails
     }
     
     ESP_LOGI(TAG, "SoftAP initialized. SSID: %s at %s:%d", CONFIG_AP_SSID, CONFIG_AP_IP_ADDR, CONFIG_WEB_PORT);
+
+    return ESP_OK;
 }
 
 esp_err_t wifi_scan_networks(wifi_ap_record_t *ap_info, uint16_t *ap_count) {
@@ -112,7 +149,10 @@ esp_err_t wifi_scan_networks(wifi_ap_record_t *ap_info, uint16_t *ap_count) {
     return err;
 }
 
-void wifi_connect_sta(const char *ssid, const char *password) {
+esp_err_t wifi_connect_sta(const char *ssid, const char *password) {
+    // Signal that when STA_START event occurs, we should indeed try to connect.
+    s_should_connect_on_sta_start = true;
+
     wifi_config_t wifi_config = {
         .sta = {
             .threshold.authmode = WIFI_AUTH_WPA2_PSK,
@@ -128,17 +168,53 @@ void wifi_connect_sta(const char *ssid, const char *password) {
     
     if (sta_netif == NULL) {
         sta_netif = esp_netif_create_default_wifi_sta();
+        if (sta_netif == NULL) {
+            ESP_LOGE(TAG, "Failed to create default STA interface");
+            return ESP_FAIL;
+        }
     }
     
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_LOGI(TAG, "Setting STA config: SSID=[%s], Password=[%s]", (char*)wifi_config.sta.ssid, sizeof(wifi_config.sta.password) > 0 ? "****" : "! ZERO LENGTH PASSWORD !");
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    // Stop Wi-Fi first to ensure a clean start for STA mode
+    esp_err_t ret = esp_wifi_stop();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "esp_wifi_stop() failed before STA mode set: %s. Attempting to continue.", esp_err_to_name(ret));
+        // Continue, as setting mode and starting might still work or recover.
+    }
+    
+    ret = esp_wifi_set_mode(WIFI_MODE_STA);
+    ret = ret == ESP_OK ? esp_wifi_set_config(WIFI_IF_STA, &wifi_config) : ret;
+    ret = ret == ESP_OK ? esp_wifi_start() : ret;
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "WiFi setting mode STA failed: %s", esp_err_to_name(ret));
+        return ret; // Return the error code
+    }
+
+    ESP_LOGI(TAG, "Setting STA config: SSID=[%s], Password=[%s]", ssid, strlen(password) > 0 ? "****" : "!EMPTY!");
 
     ESP_LOGI(TAG, "Attempting to connect to SSID: %s", ssid);
     // esp_wifi_connect() will be called automatically by the event handler
     // upon WIFI_EVENT_STA_START, so commenting out the call below
-    // ESP_ERROR_CHECK(esp_wifi_connect());
+
+    // Wait for connection result using event group
+    EventBits_t bits = xEventGroupWaitBits(wifi_event_group,
+            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+            pdTRUE, // Clear bits on exit
+            pdFALSE, // Wait for EITHER bit (any)
+            pdMS_TO_TICKS(15000)); // 15-second timeout for connection
+
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Connected to AP SSID:%s", ssid);
+        return ESP_OK;
+    } else if (bits & WIFI_FAIL_BIT) {
+        ESP_LOGW(TAG, "Connection attempt failed (disconnected or other failure event).");
+        return ESP_FAIL; // Or a more specific error like ESP_ERR_WIFI_CONN
+    } else {
+        ESP_LOGW(TAG, "Connection attempt timed out for SSID: %s", ssid);
+        return ESP_ERR_TIMEOUT;
+    }
+
+    return ESP_OK;
 
 }
 
@@ -149,26 +225,70 @@ bool wifi_is_connected(void) {
 
 bool wifi_get_ip_address(char *ip_addr) {
     esp_netif_ip_info_t ip_info;
+
+    // First, try to get the STA IP address if the interface exists and has an IP
     if (sta_netif && esp_netif_get_ip_info(sta_netif, &ip_info) == ESP_OK) {
+        // Check if the IP is valid (not 0.0.0.0)
+        if (ip_info.ip.addr != 0) {
+            snprintf(ip_addr, 16, IPSTR, IP2STR(&ip_info.ip));
+            //ESP_LOGI(TAG, "STA IP address resolved: %s", ip_addr);
+            return true;
+        }
+    }
+    // If STA is not connected or has no IP, try to get the AP IP address
+    if (ap_netif && esp_netif_get_ip_info(ap_netif, &ip_info) == ESP_OK) {
         snprintf(ip_addr, 16, IPSTR, IP2STR(&ip_info.ip));
+        //ESP_LOGI(TAG, "AP IP address resolved: %s", ip_addr);
         return true;
     }
+
+    ESP_LOGW(TAG, "IP address could not be retrieved for STA or AP.");
     return false;
 }
 
 // Event handler for WiFi and IP events
 void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        ESP_LOGI(TAG, "WIFI_EVENT_STA_START: Station started, attempting connection...");
-        esp_wifi_connect(); // Initiate connection when STA interface starts
+        ESP_LOGI(TAG, "WIFI_EVENT_STA_START: Station started.");
+        if (s_should_connect_on_sta_start) {
+            ESP_LOGI(TAG, "Initiating connection attempt...");
+            esp_wifi_connect(); // Initiate connection when STA interface starts AND flag is set
+        } else {
+            ESP_LOGI(TAG, "STA started, but connection not initiated by flag.");
+        }
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t* event = (wifi_event_sta_disconnected_t*) event_data;
-        ESP_LOGW(TAG, "WIFI_EVENT_STA_DISCONNECTED: Disconnected from AP SSID: %s, reason: %d",
-                 event->ssid, event->reason);
+        // ESP_LOGW(TAG, "WIFI_EVENT_STA_DISCONNECTED: Disconnected from AP SSID: %s, reason: %d",
+        //          event->ssid, event->reason);
+        const char* reason_str;
+        switch (event->reason) {
+            case WIFI_REASON_AUTH_EXPIRE:
+                reason_str = "Auth Expired";
+                break;
+            case WIFI_REASON_AUTH_FAIL:
+                reason_str = "Auth Failed";
+                break;
+            case WIFI_REASON_NO_AP_FOUND:
+                reason_str = "No AP Found";
+                break;
+            case WIFI_REASON_ASSOC_FAIL:
+                reason_str = "Association Failed";
+                break;
+            case WIFI_REASON_HANDSHAKE_TIMEOUT:
+                reason_str = "Handshake Timeout";
+                break;
+            default:
+                reason_str = "Unknown";
+        }
+        ESP_LOGW(TAG, "Disconnected from AP. SSID: %.*s, Reason: %s (%d)", 
+                event->ssid_len, event->ssid, reason_str, event->reason);
+        xEventGroupSetBits(wifi_event_group, WIFI_FAIL_BIT);
         // Optional: Implement retry logic here if desired
-        esp_wifi_connect(); // Example: Simple immediate retry
+        // ESP_LOGI(TAG, "Attempting to reconnect due to disconnection...");
+        // esp_wifi_connect(); // Temporarily comment out immediate retry to see original error
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
         ESP_LOGI(TAG, "IP_EVENT_STA_GOT_IP: Got IP address: " IPSTR, IP2STR(&event->ip_info.ip));
         // Optional: Set a flag or signal that connection is successful
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STACONNECTED) {
