@@ -1,53 +1,40 @@
 | Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-C61 | ESP32-H2 | ESP32-P4 | ESP32-S2 | ESP32-S3 | Linux |
 | ----------------- | ----- | -------- | -------- | -------- | -------- | --------- | -------- | -------- | -------- | -------- | ----- |
 
-# Hello World Example
+# Pfeiffer Gauge Controller
 
-Starts a FreeRTOS task to print "Hello World".
+ESP32-C6 based display and data server for Pfeiffer vacuum gauge (CMR-362 by default) with LCD display.
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+## Requirements
+- ESP-IDF v5.4.1
+- Visual Studio Code with ESP-IDF Extension
 
-## How to use example
-
-Follow detailed instructions provided specifically for this example.
-
-Select the instructions depending on Espressif chip installed on your development board:
-
-- [ESP32 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/stable/get-started/index.html)
-- [ESP32-S2 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s2/get-started/index.html)
-
-
-## Example folder contents
-
-The project **hello_world** contains one source file in C language [hello_world_main.c](main/hello_world_main.c). The file is located in folder [main](main).
-
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt` files that provide set of directives and instructions describing the project's source files and targets (executable, library, or both).
-
-Below is short explanation of remaining files in the project folder.
-
-```
-├── CMakeLists.txt
-├── pytest_hello_world.py      Python script used for automated testing
-├── main
-│   ├── CMakeLists.txt
-│   └── hello_world_main.c
-└── README.md                  This is the file you are currently reading
+## Building
+```bash
+idf.py build
 ```
 
-For more information on structure and contents of ESP-IDF projects, please refer to Section [Build System](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/build-system.html) of the ESP-IDF Programming Guide.
+## Flashing
+```bash
+idf.py -p COMx flash monitor
+```
 
-## Troubleshooting
+## Connections
+Pressure gauge signal -> `ADC 0` & `GND`  [2025.05.06: NOT TESTED yet]     
+WiFi credentials reset button -> `GPIO 5` (normal HIGH) & `GND`      
 
-* Program upload failure
+## Navigation
+Navigate to `192.168.4.1` on first use to connect to WiFi.      
+Credentials are stored in the NVS partition. Long-pressing WiFi reset button, well, resets creds.
 
-    * Hardware connection is not correct: run `idf.py -p PORT monitor`, and reboot your board to see if there are any output logs.
-    * The baud rate for downloading is too high: lower your baud rate in the `menuconfig` menu, and try again.
+On subsequent uses, the board connects to the WiFi, if available (otherwise you must reset; no autoreset logic implemented).     
+IP address is displayed on the board. So is the SoC temperature.    
 
-## Technical support and feedback
+Navigate to `IPADDR:80/data` for latest pressure measurement.    
+Navigate to `IPADDR:80/api/data` for JSON array of latest measurements (buffer size 100).    
+Fetching the API data resets the buffer.    
+Pressure measurements are JSON of pressure and timestamp in ms (API keys `"p"` and `"t"`).
 
-Please use the following feedback channels:
+Sampling interval is 100 ms; display refresh rate is twice that.
 
-* For technical queries, go to the [esp32.com](https://esp32.com/) forum
-* For a feature request or bug report, create a [GitHub issue](https://github.com/espressif/esp-idf/issues)
-
-We will get back to you as soon as possible.
+P.S.: Code generation has been heavily AI-assisted (Gemini, DeepSeek, Copilot). I'm just now learning this stuff, and really what I needed was the thing to work.
