@@ -31,6 +31,16 @@ esp_err_t lvgl_display_init(void);
  */
 void lvgl_display_pressure(float pressure, float FS);
 
+
+/**
+ * @brief Displays the temperature on the LVGL display.
+ *
+ * This function updates the LVGL display to show the given temperature value.
+ *
+ * @param temp The temperature value to be displayed, in degrees Celsius.
+ */
+void lvgl_display_temperature(float temp);
+
 /**
  * @brief Displays the given IP address on the LVGL display.
  *
@@ -47,13 +57,12 @@ void lvgl_display_ipaddr(const char* ipaddr);
  * @brief Displays the internal temperature on the LVGL display.
  *
  * This function is used to update the LVGL display with the provided
- * temperature value. The temperature is expected to be passed as a
- * string, which will be rendered on the display.
+ * temperature value. The temperature is expected to be >= -273.15°C.
  *
- * @param temp A null-terminated string representing the temperature
- *             to be displayed (e.g., "25.3°C").
+ * @param temp A float representing the temperature
+ *             to be displayed (e.g., 25.3f).
  */
-void lvgl_display_internal_temp(const char* temp);
+void lvgl_display_internal_temp(float temp);
 
 /**
  * @brief Sets the display buffer percentage for the LVGL display.

@@ -1,6 +1,6 @@
-#ifndef NETWORK_COMP_H
-#define NETWORK_COMP_H
+#pragma once
 
+#include "app_manager.h"
 #include <stdbool.h>
 #include "esp_err.h"
 #include "wifi_manager.h"
@@ -32,5 +32,3 @@ esp_err_t network_comp_init(void);
 #ifdef __cplusplus
 }
 #endif
-
-#endif // NETWORK_COMP_H

@@ -1,5 +1,4 @@
-#ifndef WIFI_MANAGER_H
-#define WIFI_MANAGER_H
+#pragma once
 
 #include "esp_wifi.h"
 
@@ -11,7 +10,6 @@ extern "C" {
 #define CONFIG_AP_CHANNEL      6
 #define CONFIG_AP_IP_ADDR      "192.168.4.1"
 #define CONFIG_WEB_PORT        80
-#define CONFIG_DATA_PORT       6666
 
 /**
  * @brief Initialize WiFi basic checks
@@ -68,8 +66,11 @@ bool wifi_get_ip_address(char *ip_addr);
  */
 void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
 
+
+esp_err_t wifi_start(void); // TODO
+esp_err_t wifi_stop(void);  // TODO
+
+
 #ifdef __cplusplus
 }
 #endif
-
-#endif // WIFI_MANAGER_H;

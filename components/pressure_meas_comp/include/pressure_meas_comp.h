@@ -1,14 +1,12 @@
 #pragma once
+
 #include <stdbool.h>
 #include "esp_err.h"
+#include "sensor_types.h"
 
-#define PRESSURE_BUFFER_SIZE 100
+#define DATA_BUFFER_SIZE 500
 #define PRESSURE_GAUGE_FS    100.0f // pressure gauge full scale in mbar | for Pfeiffer CMR362, F.S. = 100mbar | put in header for possible use in the GUI
 
-typedef struct {
-    float pressure;
-    float timestamp;
-} PressureData;
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,6 +76,20 @@ int pressure_meas_get_buffered_data(PressureData *out_buffer, int max_count);
  * @return int The buffer fill percentage (0-100).
  */
 int pressure_meas_get_buffer_full_percentage();
+
+
+/**
+ * @brief Retrieves the pressure measurement data in JSON format.
+ *
+ * This function returns a pointer to a buffer containing the pressure
+ * measurement data formatted as a JSON string. The caller is responsible
+ * for ensuring the buffer is properly handled and freed if necessary.
+ *
+ * @return A pointer to a null-terminated string containing the JSON-formatted
+ *         temperature measurement data. The ownership and lifetime of the
+ *         buffer depend on the implementation.
+ */
+char* pressure_meas_get_data_buffer_json();
 
 #ifdef __cplusplus
 }

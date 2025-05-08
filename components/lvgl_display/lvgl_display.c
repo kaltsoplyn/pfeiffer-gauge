@@ -33,6 +33,7 @@ static lv_color_t magenta;
 static lv_obj_t *screen1 = NULL;
 static lv_obj_t *screen2 = NULL;
 static lv_obj_t *pressure_label = NULL;
+static lv_obj_t *temp_label = NULL;
 static lv_obj_t *ipaddr_label = NULL;
 static lv_obj_t *int_temp_label = NULL;
 static lv_obj_t *buffer_full_label = NULL;
@@ -175,6 +176,13 @@ esp_err_t lvgl_display_init(void)
     lv_obj_align(pressure_label, LV_ALIGN_CENTER, 0, 0);
     lv_label_set_text(pressure_label, PRESSURE_GAUGE_NAME);
 
+    // temperature label
+    temp_label = lv_label_create(screen1);
+    lv_obj_set_style_text_font(temp_label, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(temp_label, lv_color_white(), 0);
+    lv_obj_align(temp_label, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_label_set_text(temp_label, "[Temp]");
+
     // ip address label
     ipaddr_label = lv_label_create(screen1);
     lv_obj_set_style_text_font(ipaddr_label, &lv_font_montserrat_20, 0);
@@ -250,6 +258,25 @@ void lvgl_display_pressure(float pressure, float FS) {
     lvgl_display_label_text(pressure_label, buffer);
 }
 
+void lvgl_display_temperature(float temp) {
+    if (!temp_label) return;
+
+    static char buffer[16];
+    if (temp > -273.15) {
+        snprintf(buffer, sizeof(buffer), "%.1f °C", temp); 
+    } else {
+        snprintf(buffer, sizeof(buffer), " -- "); 
+    }
+    
+    if (temp > 50) {
+        lvgl_set_text_color(temp_label, magenta);
+    } else {
+        lvgl_set_text_color(temp_label, lv_color_white());
+    }
+    
+    lvgl_display_label_text(temp_label, buffer);
+}
+
 void lvgl_display_ipaddr(const char* ipaddr) {
     if (!ipaddr_label) return;
     ipaddr ? lvgl_display_label_text(ipaddr_label, ipaddr) : lvgl_display_label_text(ipaddr_label, "IP: --");
@@ -257,9 +284,11 @@ void lvgl_display_ipaddr(const char* ipaddr) {
     //lv_obj_align(ipaddr_label, LV_ALIGN_BOTTOM_RIGHT, -10, -6);
 }
 
-void lvgl_display_internal_temp(const char* temp) {
+void lvgl_display_internal_temp(float temp) {
     if (!int_temp_label) return;
-    temp ? lvgl_display_label_text(int_temp_label, temp) : lvgl_display_label_text(int_temp_label, "T: -- °C");
+    static char buf[16];
+    snprintf(buf, sizeof(buf), "%.1f °C", temp);
+    temp > -273.15 ? lvgl_display_label_text(int_temp_label, buf) : lvgl_display_label_text(int_temp_label, "T: -- °C");
     lv_obj_set_size(int_temp_label, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     //lv_obj_align(int_temp_label, LV_ALIGN_BOTTOM_LEFT, 10, -6);
 }

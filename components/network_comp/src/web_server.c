@@ -4,7 +4,7 @@
 #include "esp_http_server.h"
 #include "nvs_storage.h"
 #include "esp_wifi.h"  // Required for wifi_ap_record_t
-#include "pressure_meas_comp.h"
+#include "app_manager.h"
 
 static const char *TAG = "WebServer";
 static httpd_handle_t server = NULL;
@@ -79,12 +79,12 @@ static const char* CONFIG_HTML =
         "<body>"
             "<h1>Available Networks (reload page to rescan)</h1>"
                 "<table>"
-                   "<tr><th>SSID</th><th>Password</th><th></th></tr>" // Added header row
+                   "<tr><th>SSID</th><th>Password</th><th></th></tr>"
                    "%s" // Placeholder for table rows
                 "</table>"
         "<script>"
-            "function connect(idx, ssid){" // Accept index and ssid
-            "  var pwd=document.getElementById('pwd_'+idx).value;" // Use index for ID
+            "function connect(idx, ssid){"
+            "  var pwd=document.getElementById('pwd_'+idx).value;"
             "  window.location.href='/connect?ssid='+encodeURIComponent(ssid)+'&password='+encodeURIComponent(pwd);"
             "}"
         "</script>"
@@ -245,51 +245,18 @@ static esp_err_t data_handler(httpd_req_t *req) {
 // Handler for data API
 static esp_err_t api_data_handler(httpd_req_t *req) {
     // Buffer to hold data retrieved from the component
-    PressureData data_buffer[PRESSURE_BUFFER_SIZE]; // Use the size defined in pressure_meas_comp.h
-    int data_count = pressure_meas_get_buffered_data(data_buffer, PRESSURE_BUFFER_SIZE);
+    char *sensor_json = app_manager_get_data_buffer_json();
 
-    // Estimate required JSON buffer size:
-    // Approx 50 chars per entry {"p":123.45,"t":12345.678}, + overhead
-    size_t json_buffer_size = (data_count * 50) + 50; // +50 for base structure and safety
-    char *json_buffer = malloc(json_buffer_size);
-    if (!json_buffer) {
-        ESP_LOGE(TAG, "Failed to allocate buffer for JSON response (%d bytes)", json_buffer_size);
+    if (sensor_json == NULL) {
+        ESP_LOGE(TAG, "Failed to get sensor JSON data. Returned: %p", sensor_json);
         httpd_resp_send_500(req);
         return ESP_FAIL;
     }
 
-    // Build the JSON string
-    char *ptr = json_buffer;
-    size_t remaining_len = json_buffer_size;
-    int written;
-
-    // Start JSON object and data array
-    written = snprintf(ptr, remaining_len, "{\"status\":\"ok\",\"count\":%d,\"data\":[", data_count);
-    ptr += written;
-    remaining_len -= written;
-
-    // Add each data point
-    for (int i = 0; i < data_count && remaining_len > 1; i++) {
-        written = snprintf(ptr, remaining_len, "%s{\"p\":%.2f,\"t\":%.3f}",
-                         (i > 0 ? "," : ""), // Add comma separator
-                         data_buffer[i].pressure,
-                         data_buffer[i].timestamp);
-        if (written >= remaining_len) {
-            ESP_LOGW(TAG, "JSON buffer potentially truncated");
-            // Consider sending partial data or an error
-            break;
-        }
-        ptr += written;
-        remaining_len -= written;
-    }
-
-    // Close array and object
-    snprintf(ptr, remaining_len, "]}");
-
     // Send response
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, json_buffer, HTTPD_RESP_USE_STRLEN);
-    free(json_buffer); // Free allocated memory
+    httpd_resp_send(req, sensor_json, HTTPD_RESP_USE_STRLEN); // Send the combined JSON
+    free(sensor_json);
 
     return ESP_OK;
 }

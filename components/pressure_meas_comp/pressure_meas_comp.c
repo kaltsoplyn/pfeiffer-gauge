@@ -12,8 +12,8 @@
 #include "time.h"
 #include "esp_log.h"
 
-#define VOLTAGE_DIVIDER_RATIO           4   // gauge is up to 11V (F.S. is at 9V), so a 4:1 divider brings down within the 3.3V range
-#define ADC_CHANNEL                     ADC_CHANNEL_0  // Select appropriate ADC channel
+#define VOLTAGE_DIVIDER_RATIO           4.4375   // gauge is up to 11V (F.S. is at 9V), (55+16)/16 = 4.4375 divider brings down within the 3.3V range (resistor values in kOhms)
+#define ADC_CHANNEL                     ADC_CHANNEL_2
 #define ADC_BITWIDTH                    ADC_BITWIDTH_12
 #define ADC_ATTENUATION                 ADC_ATTEN_DB_12  // Supposedely ADC_ATTEN_DB_12 → 150 mV ~ 2450 mV
 #define ADC_UNIT_ID                     ADC_UNIT_1
@@ -22,7 +22,7 @@
 static const char *TAG = "PressureMeas";
 
 // --- Circular Buffer ---
-static PressureData pressure_buffer[PRESSURE_BUFFER_SIZE];
+static PressureData pressure_buffer[DATA_BUFFER_SIZE];
 static volatile int buffer_write_idx = 0; // Index where next measurement will be written
 static volatile int buffer_read_idx = 0;  // Index where the API last read up to
 static volatile bool buffer_full = false; // Flag to indicate if buffer has wrapped around
@@ -30,7 +30,7 @@ static volatile bool buffer_full = false; // Flag to indicate if buffer has wrap
 
 // --- State Variables ---
 static SemaphoreHandle_t s_pressure_mutex = NULL;
-static PressureData s_current_pressure_state = {.pressure = -1.0f, .timestamp = 0.0f}; // Initialize to invalid
+static PressureData s_current_pressure_state = {.pressure = -1.0f, .timestamp = 0}; // Initialize to invalid
 static adc_oneshot_unit_handle_t adc_handle; // Keep handle accessible
 
 // --- Mock Data ---
@@ -82,7 +82,7 @@ esp_err_t pressure_meas_init() {
     return ESP_OK; // Success
 }
 
-int read_adc_value() {
+static int read_adc_value() {
     if (MOCK) {
         int rand_adc = rand() % 101 - 50; // keep in range -50 to 50
         mock_previous_adc = mock_previous_adc + rand_adc;
@@ -108,18 +108,18 @@ float convert_to_pressure(int adc_value) {
 PressureData pressure_meas_read_raw() {
     int adc_value = read_adc_value();
     float pressure = convert_to_pressure(adc_value);
-    float timestamp = esp_timer_get_time() / 1000.0f;
+    uint64_t timestamp = esp_timer_get_time() / 1000;
 
     PressureData current_measurement = {pressure, timestamp};
 
     // --- Store in circular buffer - Use mutex for shared state variables ---
     if (xSemaphoreTake(s_pressure_mutex, pdMS_TO_TICKS(10)) == pdTRUE) { // Use short timeout
     pressure_buffer[buffer_write_idx] = current_measurement;
-    buffer_write_idx = (buffer_write_idx + 1) % PRESSURE_BUFFER_SIZE;
+    buffer_write_idx = (buffer_write_idx + 1) % DATA_BUFFER_SIZE;
 
     if (buffer_full && buffer_write_idx == buffer_read_idx) {
         // Overwriting data that hasn't been read yet, advance read pointer
-        buffer_read_idx = (buffer_read_idx + 1) % PRESSURE_BUFFER_SIZE;
+        buffer_read_idx = (buffer_read_idx + 1) % DATA_BUFFER_SIZE;
         // buffer_full remains true
     } else if (buffer_write_idx == buffer_read_idx) {
         buffer_full = true; // Buffer just became full or wrapped exactly
@@ -131,6 +131,10 @@ PressureData pressure_meas_read_raw() {
         // Handle the case where data couldn't be written (e.g., skip this point)
     }
     // --- End Store ---
+
+    if (pressure < 0 || pressure > PRESSURE_GAUGE_FS) {
+        ESP_LOGW(TAG, "Pressure outside acceptable range: %.2f mbar", pressure);
+    }
 
     return (PressureData){pressure, timestamp};
 }
@@ -153,7 +157,7 @@ PressureData pressure_meas_get_latest_data(void) {
         xSemaphoreGive(s_pressure_mutex);
     } else {
         // Handle error - return default/zero data?
-        data = (PressureData){.pressure = -1.0f, .timestamp = 0.0f}; // Indicate error/unavailable
+        data = (PressureData){.pressure = -1.0f, .timestamp = 0}; // Indicate error/unavailable
         ESP_LOGE(TAG, "Failed to get pressure mutex in pressure_meas_get_latest_data");
     }
     return data;
@@ -183,12 +187,12 @@ int pressure_meas_get_buffered_data(PressureData *out_buffer, int max_count) {
         if (!was_buffer_full && temp_read_idx == current_write_idx) {
             break; // Reached the write pointer in a non-full buffer
         }
-        if (was_buffer_full && count >= PRESSURE_BUFFER_SIZE) {
+        if (was_buffer_full && count >= DATA_BUFFER_SIZE) {
              break; // Copied the entire full buffer
         }
 
         out_buffer[count++] = pressure_buffer[temp_read_idx];
-        temp_read_idx = (temp_read_idx + 1) % PRESSURE_BUFFER_SIZE;
+        temp_read_idx = (temp_read_idx + 1) % DATA_BUFFER_SIZE;
 
         if (was_buffer_full && temp_read_idx == current_write_idx) break; // Copied up to write pointer in a full buffer
     }
@@ -206,15 +210,59 @@ int pressure_meas_get_buffer_full_percentage() {
     if (xSemaphoreTake(s_pressure_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         int count;
         if (buffer_full) {
-            count = 100;
+            count = DATA_BUFFER_SIZE;
         } else {
-            count = (buffer_write_idx - buffer_read_idx + PRESSURE_BUFFER_SIZE) % PRESSURE_BUFFER_SIZE;
+            count = (buffer_write_idx - buffer_read_idx + DATA_BUFFER_SIZE) % DATA_BUFFER_SIZE;
         }
-        percentage = (count * 100) / PRESSURE_BUFFER_SIZE;
+        percentage = (count * 100) / DATA_BUFFER_SIZE;
         xSemaphoreGive(s_pressure_mutex);
     } else {
         ESP_LOGE(TAG, "Failed to take mutex in pressure_meas_get_buffer_full_percentage");
         return -1; // Indicate error
     }
     return percentage;
+}
+
+
+char* pressure_meas_get_data_buffer_json() {
+    int data_count = pressure_meas_get_buffered_data(pressure_buffer, DATA_BUFFER_SIZE);
+
+    // Estimate required JSON buffer size:
+    // Approx 50 chars per entry {"p":123.45,"t":12345.678}, + overhead
+    size_t json_buffer_size = (data_count * 50) + 50; // +50 for base structure and safety
+    char *json_buffer = malloc(json_buffer_size);
+    if (!json_buffer) {
+        ESP_LOGE(TAG, "Failed to allocate buffer for JSON response (%d bytes)", json_buffer_size);
+        return NULL;
+    }
+
+    // Build the JSON string
+    char *ptr = json_buffer;
+    size_t remaining_len = json_buffer_size;
+    int written;
+
+    // Start JSON object and data array
+    written = snprintf(ptr, remaining_len, "{\"status\":\"ok\",\"count\":%d,\"data\":[", data_count);
+    ptr += written;
+    remaining_len -= written;
+
+    // Add each data point
+    for (int i = 0; i < data_count && remaining_len > 1; i++) {
+        written = snprintf(ptr, remaining_len, "%s{\"p\":%.2f,\"t\":%d}",
+                         (i > 0 ? "," : ""), // Add comma separator
+                         pressure_buffer[i].pressure,
+                         (int)pressure_buffer[i].timestamp);
+        if (written >= remaining_len) {
+            ESP_LOGW(TAG, "JSON buffer potentially truncated");
+            // Consider sending partial data or an error
+            break;
+        }
+        ptr += written;
+        remaining_len -= written;
+    }
+
+    // Close array and object
+    snprintf(ptr, remaining_len, "]}");
+
+    return json_buffer;
 }

@@ -4,6 +4,7 @@
 #include "sensor_types.h"
 
 
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -20,7 +21,7 @@ extern "C" {
  *     - ESP_OK: Initialization was successful.
  *     - Appropriate error code from esp_err_t if initialization fails.
  */
-esp_err_t internal_temp_sensor_init();
+esp_err_t temp_meas_init();
 
 /**
  * @brief Reads raw temperature data from the sensor.
@@ -32,7 +33,7 @@ esp_err_t internal_temp_sensor_init();
  * @return TemperatureData The raw temperature data structure containing
  *         the sensor's output values.
  */
-TemperatureData internal_temp_sensor_read_raw();
+TemperatureData temp_meas_read_raw();
 
 /**
  * @brief Retrieves the latest temperature measurement data.
@@ -42,7 +43,7 @@ TemperatureData internal_temp_sensor_read_raw();
  *
  * @return TemperatureData The latest temperature measurement data.
  */
-TemperatureData internal_temp_sensor_get_latest_data(void);
+TemperatureData temp_meas_get_latest_data(void);
 
 /**
  * @brief Updates the latest temperature measurement data.
@@ -52,7 +53,7 @@ TemperatureData internal_temp_sensor_get_latest_data(void);
  *
  * @param TemperatureData The new temperature measurement data to be updated.
  */
-void internal_temp_sensor_update_latest_data(TemperatureData);
+void temp_meas_update_latest_data(TemperatureData);
 
 /**
  * @brief Copies buffered temperature data into the provided array and resets the buffer.
@@ -61,7 +62,7 @@ void internal_temp_sensor_update_latest_data(TemperatureData);
  * @param[in] max_count The maximum number of elements the out_buffer can hold.
  * @return The number of measurements actually copied into out_buffer.
  */
-int internal_temp_sensor_get_buffered_data(TemperatureData *out_buffer, int max_count);
+int temp_meas_get_buffered_data(TemperatureData *out_buffer, int max_count);
 
 /**
  * @brief Retrieves the percentage of how full the temperature measurement buffer is.
@@ -71,7 +72,7 @@ int internal_temp_sensor_get_buffered_data(TemperatureData *out_buffer, int max_
  *
  * @return int The buffer fill percentage (0-100).
  */
-int internal_temp_sensor_get_buffer_full_percentage();
+int temp_meas_get_buffer_full_percentage();
 
 
 /**
@@ -85,7 +86,7 @@ int internal_temp_sensor_get_buffer_full_percentage();
  *         temperature measurement data. The ownership and lifetime of the
  *         buffer depend on the implementation.
  */
-char* internal_temp_sensor_get_data_buffer_json();
+char* temp_meas_get_data_buffer_json();
 
 #ifdef __cplusplus
 }

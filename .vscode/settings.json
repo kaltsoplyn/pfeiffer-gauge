@@ -12,7 +12,11 @@
         "uart.h": "c",
         "esp_netif.h": "c",
         "adc_cali_scheme.h": "c",
-        "internal_temp_sensor.h": "c"
+        "internal_temp_sensor.h": "c",
+        "pressure_meas_comp.h": "c",
+        "array": "c",
+        "string": "c",
+        "string_view": "c"
     },
     "idf.flashType": "UART",
     "idf.customExtraVars": {
