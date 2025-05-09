@@ -180,7 +180,7 @@ esp_err_t lvgl_display_init(void)
     temp_label = lv_label_create(screen1);
     lv_obj_set_style_text_font(temp_label, &lv_font_montserrat_28, 0);
     lv_obj_set_style_text_color(temp_label, lv_color_white(), 0);
-    lv_obj_align(temp_label, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_align(temp_label, LV_ALIGN_TOP_LEFT, 10, 6);
     lv_label_set_text(temp_label, "[Temp]");
 
     // ip address label

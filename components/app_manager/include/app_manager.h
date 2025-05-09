@@ -19,6 +19,7 @@ typedef struct {
     int data_buffer_size;               // Default: 500, Max: 1000 (for SensorData_t array)
     float pressure_gauge_FS;            // Default: 100.0 (Full Scale in mbar)
     bool mock_mode;                     // Default: false
+    adc_oneshot_unit_handle_t adc_unit_handle; 
 } AppConfig_t;
 
 // --- Application Runtime State (internal to app_manager.c) ---

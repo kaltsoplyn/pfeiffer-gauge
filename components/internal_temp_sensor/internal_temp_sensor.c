@@ -2,6 +2,7 @@
  * Component for reading the SoC internal temperature
 */
 
+#include "internal_temp_sensor.h"
 #include "freertos/FreeRTOS.h" // Required for mutex
 #include "freertos/semphr.h"  // Required for mutex
 #include "esp_log.h"
@@ -244,7 +245,7 @@ char* internal_temp_sensor_get_data_buffer_json() {
 
     // Add each data point
     for (int i = 0; i < data_count && remaining_len > 1; i++) {
-        written = snprintf(ptr, remaining_len, "%s{\"p\":%.2f,\"t\":%d}",
+        written = snprintf(ptr, remaining_len, "%s{\"itemp\":%.2f,\"t\":%d}",
                          (i > 0 ? "," : ""), // Add comma separator
                          temp_buffer[i].temperature,
                          (int)temp_buffer[i].timestamp);

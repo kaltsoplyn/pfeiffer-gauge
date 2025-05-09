@@ -32,7 +32,7 @@ static volatile bool buffer_full = false; // Flag to indicate if buffer has wrap
 // --- State Variables ---
 static SemaphoreHandle_t s_temp_mutex = NULL;
 static TemperatureData s_current_temp_state = {.temperature = -273.15f, .timestamp = 0}; // Initialize to invalid
-static adc_oneshot_unit_handle_t adc_handle; // Keep handle accessible
+static adc_oneshot_unit_handle_t adc1_handle; // Keep handle accessible
 
 // --- Mock Data ---
 static int mock_previous_adc;
@@ -49,26 +49,28 @@ esp_err_t temp_meas_init() {
         return (s_temp_mutex == NULL) ? ESP_FAIL : ESP_OK; // Return status based on mutex creation
     }
 
-    adc_oneshot_unit_init_cfg_t adc_config = {
-        .unit_id = ADC_UNIT_ID
-    };
+    // adc_oneshot_unit_init_cfg_t adc_config = {
+    //     .unit_id = ADC_UNIT_ID
+    // };
 
-    esp_err_t ret = adc_oneshot_new_unit(&adc_config, &adc_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize ADC unit: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    ESP_LOGI(TAG, "ADC Unit Initialized.");
+    // esp_err_t ret = adc_oneshot_new_unit(&adc_config, &adc1_handle);
+    // if (ret != ESP_OK) {
+    //     ESP_LOGE(TAG, "Failed to initialize ADC unit: %s", esp_err_to_name(ret));
+    //     return ret;
+    // }
+    // ESP_LOGI(TAG, "ADC Unit Initialized.");
+
+    adc1_handle = sensor_types_get_adc_unit_handle();
 
     adc_oneshot_chan_cfg_t channel_config = {
         .bitwidth = ADC_BITWIDTH,
         .atten = ADC_ATTENUATION
     };
-    ret = adc_oneshot_config_channel(adc_handle, ADC_CHANNEL, &channel_config);
+    esp_err_t ret = adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL, &channel_config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to configure ADC channel: %s", esp_err_to_name(ret));
         // Consider cleaning up the ADC unit handle here if necessary
-        adc_oneshot_del_unit(adc_handle); // Clean up allocated unit
+        adc_oneshot_del_unit(adc1_handle); // Clean up allocated unit
         return ret;
     }
     ESP_LOGI(TAG, "ADC Channel Configured.");
@@ -77,9 +79,11 @@ esp_err_t temp_meas_init() {
     s_temp_mutex = xSemaphoreCreateMutex();
     if (s_temp_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create temperature mutex!");
-        adc_oneshot_del_unit(adc_handle); // Clean up allocated unit
+        adc_oneshot_del_unit(adc1_handle); // Clean up allocated unit
         return ESP_FAIL; // Or ESP_ERR_NO_MEM
     }
+
+    ESP_LOGI(TAG, "Temperature measurement initialized and enabled.");
     return ESP_OK; // Success
 
 }
@@ -94,7 +98,7 @@ static int read_adc_value() {
     }
 
     int raw_value = 0;
-    ESP_ERROR_CHECK(adc_oneshot_read(adc_handle, ADC_CHANNEL, &raw_value));
+    ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL, &raw_value));
     return raw_value;
 }
 
@@ -102,7 +106,7 @@ float convert_to_temperature(int adc_value) {
     //printf(" -- raw value: %d\n", adc_value);
     float Rth = DIVIDER_RESISTOR * adc_value / (4095 - adc_value);  // Assuming 12-bit resolution
     //printf(" ---- voltage: %.2f\n", voltage);
-    float temperature = 1/(0.001129148  + 0.000234125 * log(Rth) + 0.0000000876741 * log(Rth) * log(Rth) * log(Rth)) + 273.15; // In Celsius
+    float temperature = 1/(0.001129148  + 0.000234125 * log(Rth) + 0.0000000876741 * log(Rth) * log(Rth) * log(Rth)) - 273.15; // In Celsius
     return temperature;
 }
 
@@ -110,7 +114,7 @@ float convert_to_temperature(int adc_value) {
 TemperatureData temp_meas_read_raw() {
     int adc_value = read_adc_value();
     float temperature = convert_to_temperature(adc_value);
-    uint64_t timestamp = esp_timer_get_time();
+    uint64_t timestamp = esp_timer_get_time() / 1000;
 
     TemperatureData current_measurement = {temperature, timestamp};
 
@@ -253,7 +257,7 @@ char* temp_meas_get_data_buffer_json() {
 
     // Add each data point
     for (int i = 0; i < data_count && remaining_len > 1; i++) {
-        written = snprintf(ptr, remaining_len, "%s{\"p\":%.2f,\"t\":%d}",
+        written = snprintf(ptr, remaining_len, "%s{\"temp\":%.2f,\"t\":%d}",
                          (i > 0 ? "," : ""), // Add comma separator
                          temp_buffer[i].temperature,
                          (int)temp_buffer[i].timestamp);

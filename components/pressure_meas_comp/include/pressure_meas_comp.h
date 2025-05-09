@@ -4,8 +4,8 @@
 #include "esp_err.h"
 #include "sensor_types.h"
 
-#define DATA_BUFFER_SIZE 500
-#define PRESSURE_GAUGE_FS    100.0f // pressure gauge full scale in mbar | for Pfeiffer CMR362, F.S. = 100mbar | put in header for possible use in the GUI
+#define PRESSURE_GAUGE_FS   100.0f // pressure gauge full scale in mbar | for Pfeiffer CMR362, F.S. = 100mbar | put in header for possible use in the GUI
+#define PRESSURE_GAUGE_NAME "Pfeiffer CMR362"
 
 
 #ifdef __cplusplus

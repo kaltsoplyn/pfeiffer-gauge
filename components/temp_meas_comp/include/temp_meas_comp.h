@@ -3,7 +3,7 @@
 #include "esp_err.h"
 #include "sensor_types.h"
 
-
+#define TEMPERATURE_SENSOR_NAME "10k Thermistor"
 
 #ifdef __cplusplus
 extern "C" {

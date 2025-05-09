@@ -10,11 +10,6 @@
 #include "temp_meas_comp.h"
 #include "internal_temp_sensor.h"
 
-// --- Default Configuration Values ---
-#define DEFAULT_SAMPLING_INTERVAL_MS            50
-#define DEFAULT_DISPLAY_UPDATE_INTERVAL_MS    1000
-#define DEFAULT_PRESSURE_GAUGE_FS               100.0f
-#define DEFAULT_MOCK_MODE                       false
 
 static const char *TAG = "AppManager";
 
@@ -56,6 +51,7 @@ esp_err_t app_manager_init(void) {
     s_app_config.data_buffer_size = DATA_BUFFER_SIZE;
     s_app_config.pressure_gauge_FS = DEFAULT_PRESSURE_GAUGE_FS;
     s_app_config.mock_mode = DEFAULT_MOCK_MODE;
+    s_app_config.adc_unit_handle = sensor_types_get_adc_unit_handle();
 
     s_actual_buffer_size = s_app_config.data_buffer_size;
     s_sensor_data_buffer = (SensorData_t*)malloc(s_actual_buffer_size * sizeof(SensorData_t));

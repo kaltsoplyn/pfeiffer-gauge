@@ -31,7 +31,7 @@ static volatile bool buffer_full = false; // Flag to indicate if buffer has wrap
 // --- State Variables ---
 static SemaphoreHandle_t s_pressure_mutex = NULL;
 static PressureData s_current_pressure_state = {.pressure = -1.0f, .timestamp = 0}; // Initialize to invalid
-static adc_oneshot_unit_handle_t adc_handle; // Keep handle accessible
+static adc_oneshot_unit_handle_t adc1_handle; // Keep handle accessible
 
 // --- Mock Data ---
 static int mock_previous_adc;
@@ -48,26 +48,28 @@ esp_err_t pressure_meas_init() {
         return (s_pressure_mutex == NULL) ? ESP_FAIL : ESP_OK; // Return status based on mutex creation
     }
 
-    adc_oneshot_unit_init_cfg_t adc_config = {
-        .unit_id = ADC_UNIT_ID
-    };
+    // adc_oneshot_unit_init_cfg_t adc_config = {
+    //     .unit_id = ADC_UNIT_ID
+    // };
 
-    esp_err_t ret = adc_oneshot_new_unit(&adc_config, &adc_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize ADC unit: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    ESP_LOGI(TAG, "ADC Unit Initialized.");
+    // esp_err_t ret = adc_oneshot_new_unit(&adc_config, &adc1_handle);
+    // if (ret != ESP_OK) {
+    //     ESP_LOGE(TAG, "Failed to initialize ADC unit: %s", esp_err_to_name(ret));
+    //     return ret;
+    // }
+    // ESP_LOGI(TAG, "ADC Unit Initialized.");
+
+    adc1_handle = sensor_types_get_adc_unit_handle();
 
     adc_oneshot_chan_cfg_t channel_config = {
         .bitwidth = ADC_BITWIDTH,
         .atten = ADC_ATTENUATION
     };
-    ret = adc_oneshot_config_channel(adc_handle, ADC_CHANNEL, &channel_config);
+    esp_err_t ret = adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL, &channel_config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to configure ADC channel: %s", esp_err_to_name(ret));
         // Consider cleaning up the ADC unit handle here if necessary
-        adc_oneshot_del_unit(adc_handle); // Clean up allocated unit
+        adc_oneshot_del_unit(adc1_handle); // Clean up allocated unit
         return ret;
     }
     ESP_LOGI(TAG, "ADC Channel Configured.");
@@ -76,9 +78,11 @@ esp_err_t pressure_meas_init() {
     s_pressure_mutex = xSemaphoreCreateMutex();
     if (s_pressure_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create pressure mutex!");
-        adc_oneshot_del_unit(adc_handle); // Clean up allocated unit
+        adc_oneshot_del_unit(adc1_handle); // Clean up allocated unit
         return ESP_FAIL; // Or ESP_ERR_NO_MEM
     }
+
+    ESP_LOGI(TAG, "Pressure measurement initialized and enabled.");
     return ESP_OK; // Success
 }
 
@@ -92,7 +96,7 @@ static int read_adc_value() {
     }
 
     int raw_value = 0;
-    ESP_ERROR_CHECK(adc_oneshot_read(adc_handle, ADC_CHANNEL, &raw_value));
+    ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL, &raw_value));
     return raw_value;
 }
 
@@ -248,7 +252,7 @@ char* pressure_meas_get_data_buffer_json() {
 
     // Add each data point
     for (int i = 0; i < data_count && remaining_len > 1; i++) {
-        written = snprintf(ptr, remaining_len, "%s{\"p\":%.2f,\"t\":%d}",
+        written = snprintf(ptr, remaining_len, "%s{\"pres\":%.2f,\"t\":%d}",
                          (i > 0 ? "," : ""), // Add comma separator
                          pressure_buffer[i].pressure,
                          (int)pressure_buffer[i].timestamp);
