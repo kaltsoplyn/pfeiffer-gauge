@@ -158,3 +158,12 @@ esp_err_t network_comp_init() {
 
     return ESP_OK;
 }
+
+esp_err_t network_comp_toggle_web_server() {
+    bool server_on = app_manager_get_web_server_active();
+    if (server_on) {
+        return stop_web_server();
+    } else {
+        return start_web_server();
+    }
+}

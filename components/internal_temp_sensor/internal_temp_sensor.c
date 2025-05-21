@@ -10,6 +10,7 @@
 #include "internal_temp_sensor.h"
 #include "esp_timer.h"
 #include "time.h"
+#include "time_manager.h"
 
 #define MOCK    false
 
@@ -102,7 +103,7 @@ TemperatureData internal_temp_sensor_read_raw() {
     float temperature = -273.15;
     float* temp_ptr = &temperature; 
     internal_temp_sensor_read(temp_ptr);
-    uint64_t timestamp = esp_timer_get_time() / 1000;
+    uint64_t timestamp = time_manager_get_timestamp_ms();  //esp_timer_get_time() / 1000;
 
     TemperatureData current_measurement = {temperature, timestamp};
 
@@ -245,10 +246,10 @@ char* internal_temp_sensor_get_data_buffer_json() {
 
     // Add each data point
     for (int i = 0; i < data_count && remaining_len > 1; i++) {
-        written = snprintf(ptr, remaining_len, "%s{\"itemp\":%.2f,\"t\":%d}",
+        written = snprintf(ptr, remaining_len, "%s{\"itemp\":%.2f,\"t\":%llu}",
                          (i > 0 ? "," : ""), // Add comma separator
                          temp_buffer[i].temperature,
-                         (int)temp_buffer[i].timestamp);
+                         temp_buffer[i].timestamp);
         if (written >= remaining_len) {
             ESP_LOGW(TAG, "JSON buffer potentially truncated");
             // Consider sending partial data or an error

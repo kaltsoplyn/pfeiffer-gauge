@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "esp_adc/adc_oneshot.h"
+#include "time_manager.h"
 
 // --- Sensor Types ---
 typedef struct {
@@ -53,3 +54,10 @@ adc_oneshot_unit_handle_t sensor_types_get_adc_unit_handle();
  *      - Other error codes: An error occurred during initialization.
  */
 esp_err_t adc_init();
+
+// /** 
+// * @brief Return UNIX timestamp since epoch in ms.
+// *
+// * @return uint64_t timestamp in ms
+// */ 
+// uint64_t sensor_types_get_timestamp_ms();

@@ -16,7 +16,10 @@
         "pressure_meas_comp.h": "c",
         "array": "c",
         "string": "c",
-        "string_view": "c"
+        "string_view": "c",
+        "usb_serial_jtag_vfs.h": "c",
+        "format": "c",
+        "string.h": "c"
     },
     "idf.flashType": "UART",
     "idf.customExtraVars": {

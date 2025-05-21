@@ -8,4 +8,6 @@ idf_component_register(SRCS "pfeiffer_gauge.c"
                             internal_temp_sensor 
                             app_manager
                             sensor_types
+                            time_manager
+                            serial_comp
                     INCLUDE_DIRS ".")

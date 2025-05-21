@@ -112,7 +112,7 @@ float convert_to_pressure(int adc_value) {
 PressureData pressure_meas_read_raw() {
     int adc_value = read_adc_value();
     float pressure = convert_to_pressure(adc_value);
-    uint64_t timestamp = esp_timer_get_time() / 1000;
+    uint64_t timestamp = time_manager_get_timestamp_ms();  //esp_timer_get_time() / 1000;
 
     PressureData current_measurement = {pressure, timestamp};
 
@@ -136,7 +136,7 @@ PressureData pressure_meas_read_raw() {
     }
     // --- End Store ---
 
-    if (pressure < 0 || pressure > PRESSURE_GAUGE_FS) {
+    if (/** pressure < 0 || */ pressure > PRESSURE_GAUGE_FS) { // TODO uncomment in real-life app
         ESP_LOGW(TAG, "Pressure outside acceptable range: %.2f mbar", pressure);
     }
 
@@ -252,10 +252,10 @@ char* pressure_meas_get_data_buffer_json() {
 
     // Add each data point
     for (int i = 0; i < data_count && remaining_len > 1; i++) {
-        written = snprintf(ptr, remaining_len, "%s{\"pres\":%.2f,\"t\":%d}",
+        written = snprintf(ptr, remaining_len, "%s{\"pres\":%.2f,\"t\":%llu}",
                          (i > 0 ? "," : ""), // Add comma separator
                          pressure_buffer[i].pressure,
-                         (int)pressure_buffer[i].timestamp);
+                         pressure_buffer[i].timestamp);
         if (written >= remaining_len) {
             ESP_LOGW(TAG, "JSON buffer potentially truncated");
             // Consider sending partial data or an error

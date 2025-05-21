@@ -10,14 +10,18 @@
 extern "C" {
 #endif
 
+#define DEFAULT_SERIAL_DATA_JSON_STREAM false
+#define DEFAULT_WEB_SERVER_ACTIVE       true
 
 
 // --- Application Configuration ---
 typedef struct {
     int sampling_interval_ms;           // Default: 50, Min: 5
-    int display_update_interval_ms;     // Default: 1000, Min: 100
-    int data_buffer_size;               // Default: 500, Max: 1000 (for SensorData_t array)
+    int display_update_interval_ms;     // Default: 1000, Min: 40
+    int data_buffer_size;               // Default: 500
     float pressure_gauge_FS;            // Default: 100.0 (Full Scale in mbar)
+    bool serial_data_json_stream;       // Default: false
+    bool web_server_active;             // Default: true
     bool mock_mode;                     // Default: false
     adc_oneshot_unit_handle_t adc_unit_handle; 
 } AppConfig_t;
@@ -51,10 +55,16 @@ int app_manager_get_data_buffer_size(void);
 // Note: Setting data_buffer_size at runtime would require reallocating the buffer.
 // For simplicity, this might be a read-only config after init, or setter needs careful implementation.
 // For now, we'll make it settable but it won't resize the actual buffer post-init.
-esp_err_t app_manager_set_data_buffer_size(int size);
+//esp_err_t app_manager_set_data_buffer_size(int size);
 
 float app_manager_get_pressure_gauge_FS(void);
 esp_err_t app_manager_set_pressure_gauge_FS(float fs);
+
+bool app_manager_get_serial_data_json_stream(void);
+esp_err_t app_manager_set_serial_data_json_stream(bool stream_json);
+
+bool app_manager_get_web_server_active(void);
+esp_err_t app_manager_set_web_server_active(bool server_on);
 
 bool app_manager_get_mock_mode(void);
 void app_manager_set_mock_mode(bool enable);
@@ -65,7 +75,7 @@ uint64_t app_manager_get_start_time_ms(void);
 // start_time_ms is set once at init, no public setter.
 
 bool app_manager_get_sampling_active(void);
-void app_manager_set_sampling_active(bool active);
+esp_err_t app_manager_set_sampling_active(bool active);
 
 /**
  * @brief Sets the desired Wi-Fi active state.
@@ -82,11 +92,11 @@ esp_err_t app_manager_set_wifi_active(bool active);
  */
 bool app_manager_get_wifi_status(void); // Renamed from get_wifi_active for clarity
 
-float app_manager_get_internal_temp_c(void);
-void app_manager_update_internal_temp_c(float temp_c); // Called by the temp sensor task
+// float app_manager_get_internal_temp_c(void);
+// esp_err_t app_manager_update_internal_temp_c(float temp_c); // Called by the temp sensor task
 
 SensorData_t app_manager_get_latest_sensor_data(void);
-void app_manager_update_latest_sensor_data(SensorData_t data); // Called by the main measurement task
+esp_err_t app_manager_update_latest_sensor_data(SensorData_t data); // Called by the main measurement task
 
 
 /**
@@ -117,6 +127,22 @@ char* app_manager_get_data_buffer_json();
 // int app_manager_get_buffered_sensor_data(SensorData_t *out_buffer, int max_out_count);
 
 //int app_manager_get_sensor_buffer_fill_percentage(void);
+
+
+/**
+ * @brief Retrieves the latest sensor data in JSON format.
+ *
+ * This function returns a pointer to a JSON-formatted string containing
+ * the most recent sensor data collected by the application.
+ *
+ * @note The returned string may be dynamically allocated. The caller is
+ * responsible for freeing the memory if required, or should consult the
+ * implementation for memory management details.
+ *
+ * @return Pointer to a null-terminated JSON string representing the latest
+ *         sensor data, or NULL if no data is available or an error occurs.
+ */
+char* app_manager_get_latest_sensor_data_json(void);
 
 #ifdef __cplusplus
 }

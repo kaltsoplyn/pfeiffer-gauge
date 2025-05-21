@@ -18,8 +18,7 @@ static AppConfig_t s_app_config;
 typedef struct {
     uint64_t start_time_ms;
     bool sampling_active;
-    bool desired_wifi_active; // Tracks the requested state
-    float internal_temp;
+    bool desired_wifi_active;
     SensorData_t latest_sensor_data;
 } AppState_t;
 
@@ -28,11 +27,11 @@ static SemaphoreHandle_t s_config_mutex = NULL; // For thread-safe access to con
 static SemaphoreHandle_t s_state_mutex = NULL;  // For thread-safe access to runtime state
 
 // --- Internal Sensor Data Buffer ---
-static SensorData_t *s_sensor_data_buffer = NULL;
-static volatile int s_buffer_write_idx = 0;
-static volatile int s_buffer_read_idx = 0;
-static volatile bool s_buffer_full = false;
-static int s_actual_buffer_size = 0; // To store the size set at init or by setter
+// static SensorData_t *s_sensor_data_buffer = NULL;
+// static volatile int s_buffer_write_idx = 0;
+// static volatile int s_buffer_read_idx = 0;
+// static volatile bool s_buffer_full = false;
+// static int s_actual_buffer_size = 0; // To store the size set at init or by setter
 
 esp_err_t app_manager_init(void) {
     s_config_mutex = xSemaphoreCreateMutex();
@@ -50,24 +49,31 @@ esp_err_t app_manager_init(void) {
     s_app_config.display_update_interval_ms = DEFAULT_DISPLAY_UPDATE_INTERVAL_MS;
     s_app_config.data_buffer_size = DATA_BUFFER_SIZE;
     s_app_config.pressure_gauge_FS = DEFAULT_PRESSURE_GAUGE_FS;
+    s_app_config.serial_data_json_stream = DEFAULT_SERIAL_DATA_JSON_STREAM;
+    s_app_config.web_server_active = DEFAULT_WEB_SERVER_ACTIVE;
     s_app_config.mock_mode = DEFAULT_MOCK_MODE;
     s_app_config.adc_unit_handle = sensor_types_get_adc_unit_handle();
 
-    s_actual_buffer_size = s_app_config.data_buffer_size;
-    s_sensor_data_buffer = (SensorData_t*)malloc(s_actual_buffer_size * sizeof(SensorData_t));
-    if (!s_sensor_data_buffer) {
-        ESP_LOGE(TAG, "Failed to allocate sensor data buffer (%d entries)!", s_actual_buffer_size);
-        vSemaphoreDelete(s_config_mutex);
-        vSemaphoreDelete(s_state_mutex);
-        return ESP_ERR_NO_MEM;
-    }
-    ESP_LOGI(TAG, "Sensor data buffer allocated for %d entries.", s_actual_buffer_size);
+    // s_actual_buffer_size = s_app_config.data_buffer_size;
+    // s_sensor_data_buffer = (SensorData_t*)malloc(s_actual_buffer_size * sizeof(SensorData_t));
+    // if (!s_sensor_data_buffer) {
+    //     ESP_LOGE(TAG, "Failed to allocate sensor data buffer (%d entries)!", s_actual_buffer_size);
+    //     vSemaphoreDelete(s_config_mutex);
+    //     vSemaphoreDelete(s_state_mutex);
+    //     return ESP_ERR_NO_MEM;
+    // }
+    // ESP_LOGI(TAG, "Sensor data buffer allocated for %d entries.", s_actual_buffer_size);
 
     // Initialize default state values
-    s_app_state.start_time_ms = esp_timer_get_time() / 1000;
+
+    // TODO about start_time_ms: esp_timer_get_time returns time since boot -> no good 
+    // I need to:
+    // 1. FETCH ACTUAL UNIX TIMESTAMP SINCE EPOCH
+    // 2. at that point, RESTART esp_timer and set start_time_ms to that
+    s_app_state.start_time_ms = esp_timer_get_time() / 1000; 
+    
     s_app_state.sampling_active = true;
     s_app_state.desired_wifi_active = true; // Assume Wi-Fi should be active on boot
-    s_app_state.internal_temp = -273.15f; // Invalid initial temp
     s_app_state.latest_sensor_data = (SensorData_t){
         .pressure_data = {.pressure = -1.0f, .timestamp = 0},
         .temperature_data = {.temperature = -273.15f, .timestamp = 0},
@@ -88,44 +94,53 @@ void app_manager_get_config(AppConfig_t *config_out) {
 
 int app_manager_get_sampling_interval_ms(void) { return s_app_config.sampling_interval_ms; }
 esp_err_t app_manager_set_sampling_interval_ms(int interval_ms) {
-    if (interval_ms < 5) return ESP_ERR_INVALID_ARG;
+    if (interval_ms < 5) {
+        ESP_LOGE(TAG, "Minimum sampling interval is 5 ms");
+        return ESP_ERR_INVALID_ARG;
+    }
     if (xSemaphoreTake(s_config_mutex, portMAX_DELAY) == pdTRUE) {
         s_app_config.sampling_interval_ms = interval_ms;
         xSemaphoreGive(s_config_mutex);
         ESP_LOGI(TAG, "Config: Sampling interval set to %d ms", interval_ms);
         return ESP_OK;
     }
+    ESP_LOGE(TAG, "Error accessing config mutex [This should not happen]");
     return ESP_FAIL;
 }
 
 int app_manager_get_display_update_interval_ms(void) { return s_app_config.display_update_interval_ms; }
 esp_err_t app_manager_set_display_update_interval_ms(int interval_ms) {
-    if (interval_ms < 100) return ESP_ERR_INVALID_ARG;
-     if (xSemaphoreTake(s_config_mutex, portMAX_DELAY) == pdTRUE) {
+    if (interval_ms < 40) {
+        ESP_LOGE(TAG, "Minimum display update interval is 40 ms.");
+        return ESP_ERR_INVALID_ARG;
+    }
+        
+    if (xSemaphoreTake(s_config_mutex, portMAX_DELAY) == pdTRUE) {
         s_app_config.display_update_interval_ms = interval_ms;
         xSemaphoreGive(s_config_mutex);
         ESP_LOGI(TAG, "Config: Display update interval set to %d ms", interval_ms);
         return ESP_OK;
     }
+    ESP_LOGE(TAG, "Error accessing config mutex [This should not happen]");
     return ESP_FAIL;
 }
 
 int app_manager_get_data_buffer_size(void) { return s_app_config.data_buffer_size; }
-esp_err_t app_manager_set_data_buffer_size(int size) {
-    if (size <= 0 || size > 1000) return ESP_ERR_INVALID_ARG;
-    // Note: This currently only changes the config value.
-    // Resizing s_sensor_data_buffer at runtime is complex and not implemented here.
-    // It would require freeing the old buffer, allocating new, and handling data migration/loss.
-    // For now, the actual buffer size is fixed at init based on the initial config.
-    if (xSemaphoreTake(s_config_mutex, portMAX_DELAY) == pdTRUE) {
-        s_app_config.data_buffer_size = size;
-        // s_actual_buffer_size remains unchanged after init in this simplified version
-        xSemaphoreGive(s_config_mutex);
-        ESP_LOGI(TAG, "Config: Data buffer size set to %d (actual buffer size fixed at init: %d)", size, s_actual_buffer_size);
-        return ESP_OK;
-    }
-    return ESP_FAIL;
-}
+// esp_err_t app_manager_set_data_buffer_size(int size) {
+//     if (size <= 0 || size > 1000) return ESP_ERR_INVALID_ARG;
+//     // Note: This currently only changes the config value.
+//     // Resizing s_sensor_data_buffer at runtime is complex and not implemented here.
+//     // It would require freeing the old buffer, allocating new, and handling data migration/loss.
+//     // For now, the actual buffer size is fixed at init based on the initial config.
+//     if (xSemaphoreTake(s_config_mutex, portMAX_DELAY) == pdTRUE) {
+//         s_app_config.data_buffer_size = size;
+//         // s_actual_buffer_size remains unchanged after init in this simplified version
+//         xSemaphoreGive(s_config_mutex);
+//         ESP_LOGI(TAG, "Config: Data buffer size set to %d (actual buffer size fixed at init: %d)", size, s_actual_buffer_size);
+//         return ESP_OK;
+//     }
+//     return ESP_FAIL;
+// }
 
 float app_manager_get_pressure_gauge_FS(void) { return s_app_config.pressure_gauge_FS; }
 esp_err_t app_manager_set_pressure_gauge_FS(float fs) {
@@ -136,9 +151,35 @@ esp_err_t app_manager_set_pressure_gauge_FS(float fs) {
         ESP_LOGI(TAG, "Config: Pressure Gauge FS set to %.2f", fs);
         return ESP_OK;
     }
+    ESP_LOGE(TAG, "Error accessing config mutex [This should not happen]");
     return ESP_FAIL;
 }
 
+bool app_manager_get_serial_data_json_stream(void) { return s_app_config.serial_data_json_stream; }
+esp_err_t app_manager_set_serial_data_json_stream(bool stream_json) {
+    if (xSemaphoreTake(s_config_mutex, portMAX_DELAY) == pdTRUE) {
+        s_app_config.serial_data_json_stream = stream_json;
+        xSemaphoreGive(s_config_mutex);
+        ESP_LOGI(TAG, "Config: Latest sensor data set to%sstream in JSON format via serial.", stream_json ? "" : " NOT ");
+        return ESP_OK;
+    }
+    ESP_LOGE(TAG, "Error accessing config mutex [This should not happen]");
+    return ESP_FAIL;
+}
+
+bool app_manager_get_web_server_active(void) { return s_app_config.web_server_active; }
+esp_err_t app_manager_set_web_server_active(bool server_on) {
+    if (xSemaphoreTake(s_config_mutex, portMAX_DELAY) == pdTRUE) {
+        s_app_config.web_server_active = server_on;
+        xSemaphoreGive(s_config_mutex);
+        ESP_LOGI(TAG, "Config: Web server %s.", server_on ? "ON" : "OFF");
+        return ESP_OK;
+    }
+    ESP_LOGE(TAG, "Error accessing config mutex [This should not happen]");
+    return ESP_FAIL;
+}
+
+// TODO implement mock mode for real
 bool app_manager_get_mock_mode(void) { return s_app_config.mock_mode; }
 void app_manager_set_mock_mode(bool enable) {
     if (xSemaphoreTake(s_config_mutex, portMAX_DELAY) == pdTRUE) {
@@ -160,12 +201,15 @@ bool app_manager_get_sampling_active(void) {
     return active;
 }
 
-void app_manager_set_sampling_active(bool active) {
+esp_err_t app_manager_set_sampling_active(bool active) {
     if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
         s_app_state.sampling_active = active;
         xSemaphoreGive(s_state_mutex);
         ESP_LOGI(TAG, "State: Sampling active set to: %s", active ? "true" : "false");
+        return ESP_OK;
     }
+    ESP_LOGE(TAG, "Error accessing state mutex [This should not happen]");
+    return ESP_FAIL;
 }
 
 esp_err_t app_manager_set_wifi_active(bool active) {
@@ -189,20 +233,23 @@ bool app_manager_get_wifi_status(void) {
     return wifi_is_connected(); // Directly use wifi_manager's status check
 }
 
-float app_manager_get_internal_temp(void) { 
-    float internal_temp;
-    if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
-        internal_temp = s_app_state.internal_temp;
-        xSemaphoreGive(s_state_mutex);
-        return internal_temp;
-    }
-    /* ... (same as before, with mutex) ... */ return s_app_state.internal_temp; } // Simplified for brevity
-void app_manager_update_internal_temp(float temp_c) {
-    if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
-        s_app_state.internal_temp = temp_c;
-        xSemaphoreGive(s_state_mutex);
-    }  
-}
+// float app_manager_get_internal_temp(void) { 
+//     float internal_temp;
+//     if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+//         internal_temp = s_app_state.internal_temp;
+//         xSemaphoreGive(s_state_mutex);
+//         return internal_temp;
+//     }
+//     /* ... (same as before, with mutex) ... */ return s_app_state.internal_temp; } // Simplified for brevity
+// esp_err_t app_manager_update_internal_temp(float temp_c) {
+//     if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+//         s_app_state.internal_temp = temp_c;
+//         xSemaphoreGive(s_state_mutex);
+//         ESP_LOGI(TAG, "Should I remove this?");
+//         return ESP_OK;
+//     }  
+//     return ESP_FAIL;
+// }
 
 SensorData_t app_manager_get_latest_sensor_data(void) {
     SensorData_t latest_sensor_data;
@@ -212,11 +259,15 @@ SensorData_t app_manager_get_latest_sensor_data(void) {
     }
     return latest_sensor_data;
 }
-void app_manager_update_latest_sensor_data(SensorData_t data) { 
+esp_err_t app_manager_update_latest_sensor_data(SensorData_t data) { 
     if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
         s_app_state.latest_sensor_data = data;
         xSemaphoreGive(s_state_mutex);
+        //ESP_LOGI(TAG, "State updated with latest sensor data");
+        return ESP_OK;
     }
+    ESP_LOGE(TAG, "Error accessing state mutex [This should not happen]");
+    return ESP_FAIL;
 }
 
 
@@ -259,61 +310,37 @@ char* app_manager_get_data_buffer_json() {
     return combined_sensor_json;
 }
 
-// void app_manager_add_sensor_data_to_buffer(SensorData_t data) {
-//     if (!s_sensor_data_buffer) return;
-//     if (xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-//         s_sensor_data_buffer[s_buffer_write_idx] = data;
-//         s_buffer_write_idx = (s_buffer_write_idx + 1) % s_actual_buffer_size;
-//         if (s_buffer_full && s_buffer_write_idx == s_buffer_read_idx) {
-//             s_buffer_read_idx = (s_buffer_read_idx + 1) % s_actual_buffer_size;
-//         } else if (s_buffer_write_idx == s_buffer_read_idx) {
-//             s_buffer_full = true;
-//         }
-//         xSemaphoreGive(s_state_mutex);
-//     } else {
-//         ESP_LOGE(TAG, "Failed to take state_mutex in add_sensor_data_to_buffer");
-//     }
-// }
+char* app_manager_get_latest_sensor_data_json(void) {
+    SensorData_t data = app_manager_get_latest_sensor_data(); // Fetches the latest data
 
-// int app_manager_get_buffered_sensor_data(SensorData_t *out_buffer, int max_out_count) {
-//     if (!s_sensor_data_buffer || !out_buffer || max_out_count <= 0) return 0;
-//     int count = 0;
-//     if (xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-//         int current_write_idx = s_buffer_write_idx;
-//         bool was_buffer_full = s_buffer_full;
-//         int temp_read_idx = s_buffer_read_idx;
+    // Estimate buffer size. Example:
+    // {"pressure":-1234.56,"temperature":-12.34,"internal_temp":-12.34}
+    // Max length for pressure: "-1234.56" (8 chars)
+    // Max length for temps: "-12.34" (6 chars each)
+    // Keys: "pressure": (11), "temperature": (14), "internal_temp": (16)
+    // Structure: {},"":,"":,"": (9 chars)
+    // Total: 8+6+6+11+14+16+9 = 70. Add null terminator and some buffer.
+    // Let's allocate 128 bytes, which should be more than enough.
+    size_t buffer_size = 256;
+    char* json_string = (char*)malloc(buffer_size);
 
-//         while (count < max_out_count) {
-//             if (!was_buffer_full && temp_read_idx == current_write_idx) break;
-//             if (was_buffer_full && count >= s_actual_buffer_size) break;
+    if (!json_string) {
+        ESP_LOGE(TAG, "Failed to allocate memory for JSON string");
+        return NULL;
+    }
 
-//             out_buffer[count++] = s_sensor_data_buffer[temp_read_idx];
-//             temp_read_idx = (temp_read_idx + 1) % s_actual_buffer_size;
+    int written = snprintf(json_string, buffer_size,
+                           "{\"pressure\":%.2f,\"temperature\":%.2f,\"internal_temp\":%.2f,\"timestamp\":%llu}",
+                           data.pressure_data.pressure,
+                           data.temperature_data.temperature,
+                           data.internal_temp_data.temperature,
+                           data.pressure_data.timestamp);
 
-//             if (was_buffer_full && temp_read_idx == current_write_idx) break;
-//         }
-//         s_buffer_read_idx = temp_read_idx;
-//         s_buffer_full = false;
-//         xSemaphoreGive(s_state_mutex);
-//     } else {
-//         ESP_LOGE(TAG, "Failed to take state_mutex in get_buffered_sensor_data");
-//     }
-//     return count;
-// }
+    if (written < 0 || written >= buffer_size) {
+        ESP_LOGE(TAG, "Error formatting JSON string or buffer too small. Written: %d", written);
+        free(json_string);
+        return NULL;
+    }
 
-// int app_manager_get_sensor_buffer_fill_percentage(void) {
-//     int percentage = -1;
-//     if (!s_sensor_data_buffer) return -1;
-//     if (xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-//         int count;
-//         count = (s_buffer_write_idx - s_buffer_read_idx + s_actual_buffer_size) % s_actual_buffer_size;
-//         if (s_buffer_full && count == 0) {
-//             count = s_actual_buffer_size;
-//         }
-//         percentage = (s_actual_buffer_size > 0) ? ((count * 100) / s_actual_buffer_size) : 0;
-//         xSemaphoreGive(s_state_mutex);
-//     } else {
-//         ESP_LOGE(TAG, "Failed to take state_mutex in get_sensor_buffer_fill_percentage");
-//     }
-//     return percentage;
-// }
+    return json_string;
+}

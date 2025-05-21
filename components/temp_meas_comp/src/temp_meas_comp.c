@@ -114,7 +114,7 @@ float convert_to_temperature(int adc_value) {
 TemperatureData temp_meas_read_raw() {
     int adc_value = read_adc_value();
     float temperature = convert_to_temperature(adc_value);
-    uint64_t timestamp = esp_timer_get_time() / 1000;
+    uint64_t timestamp = time_manager_get_timestamp_ms();  //esp_timer_get_time() / 1000;
 
     TemperatureData current_measurement = {temperature, timestamp};
 
@@ -257,10 +257,10 @@ char* temp_meas_get_data_buffer_json() {
 
     // Add each data point
     for (int i = 0; i < data_count && remaining_len > 1; i++) {
-        written = snprintf(ptr, remaining_len, "%s{\"temp\":%.2f,\"t\":%d}",
+        written = snprintf(ptr, remaining_len, "%s{\"temp\":%.2f,\"t\":%llu}",
                          (i > 0 ? "," : ""), // Add comma separator
                          temp_buffer[i].temperature,
-                         (int)temp_buffer[i].timestamp);
+                         temp_buffer[i].timestamp);
         if (written >= remaining_len) {
             ESP_LOGW(TAG, "JSON buffer potentially truncated");
             // Consider sending partial data or an error

@@ -262,7 +262,11 @@ static esp_err_t api_data_handler(httpd_req_t *req) {
 }
 
 esp_err_t start_web_server(void) {
-    if (server) return ESP_OK;
+    bool server_active = app_manager_get_web_server_active();
+    if (server) {
+        if (!server_active) app_manager_set_web_server_active(true);
+        return ESP_OK;
+    } 
     
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
@@ -274,6 +278,7 @@ esp_err_t start_web_server(void) {
     
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start server!\n%s", esp_err_to_name(ret));
+        app_manager_set_web_server_active(false);
         return ret;
     }
     
@@ -309,25 +314,30 @@ esp_err_t start_web_server(void) {
     
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register URI handlers!\n%s", esp_err_to_name(ret));
+        app_manager_set_web_server_active(false);
         return ret;
     }
     
     ESP_LOGI(TAG, "Web server started on port %d", CONFIG_WEB_PORT); // Updated log message
-
+    app_manager_set_web_server_active(true);
     return ESP_OK;
 }
 
 
 esp_err_t stop_web_server(void) {
-    if (!server) return ESP_OK;
+    if (!server) {
+        app_manager_set_web_server_active(false);
+        return ESP_OK;
+    }
     
     esp_err_t ret = httpd_stop(server);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to stop the server!\n%s", esp_err_to_name(ret));
+        app_manager_set_web_server_active(true);
         return ret;
     }
     server = NULL;
     ESP_LOGI(TAG, "Web server stopped");
-    
+    app_manager_set_web_server_active(false);
     return ESP_OK;
 }

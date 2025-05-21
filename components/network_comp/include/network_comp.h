@@ -22,6 +22,8 @@ extern "C" {
  */
 esp_err_t network_comp_init(void);
 
+esp_err_t network_comp_toggle_web_server(void);
+
 
 
 // Configuration constants
