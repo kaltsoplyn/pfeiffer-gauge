@@ -43,6 +43,7 @@
 
 // basic flow: sensor_types.h -> pressure, temp, internal temp, and app_manager components -> network component and this
  
+ #define VERSION "0.1.0"
 
  #define DEBUG_RUN_TASKS                         true // Enable/disable tasks
  #define SERIAL_COMMAND_BUFFER_SIZE 256 // Adjust as needed
@@ -83,9 +84,8 @@ void sensor_measurement_task(void *arg) {
             SensorData_t new_sensor_data = (SensorData_t){new_pressure_data, new_temp_data, new_int_temp_data};
             app_manager_update_latest_sensor_data(new_sensor_data);
 
-            if (app_manager_get_serial_data_json_stream()) {
+            if (app_manager_get_serial_data_json_stream_active()) {
                 // Get sensor data as a JSON string from app_manager
-                ESP_LOGI(TAG, "Testing JSON streaming clause");
                 char *json_string = app_manager_get_latest_sensor_data_json();
                 if (json_string) {
                     serial_comp_send(json_string);
@@ -247,16 +247,85 @@ void serial_comp_echo_task(void *arg) {
             ESP_LOGI(TAG, "Read %d bytes: %s", len, s_serial_buffer);
         
             // Handle commands
-            if (strncmp(s_serial_buffer, "data", 4) == 0) {
+            if (strcmp(s_serial_buffer, "help") == 0) {
+                serial_comp_send("Available commands:\n"
+                                 "  help - Show this help message\n"
+                                 "  data - Get latest sensor data in JSON format\n"
+                                 "  data stream start - Start streaming sensor data in JSON format\n"
+                                 "  data stream stop - Stop streaming sensor data in JSON format\n"
+                                 "  backlight on - Turn on display backlight\n"
+                                 "  backlight off - Turn off display backlight\n"
+                                 "  webserver - Toggle web server\n"
+                                 "  network - Status of network\n"
+                                 "  network on - Enable network features\n"
+                                 "  network off - Disable network features\n");
+
+            } else if (strcmp(s_serial_buffer, "version") == 0) {
+                char *version_info = malloc(64);
+                if (version_info) {
+                    snprintf(version_info, 64, "Pfeiffer Pressure Gauge Controller v%s", VERSION);
+                    serial_comp_send(version_info);
+                    free(version_info);
+                } else {
+                    ESP_LOGE(TAG, "Failed to allocate memory for version info.");
+                }
+
+            } else if (strcmp(s_serial_buffer, "reset") == 0) {
+                ESP_LOGI(TAG, "Resetting the device...");
+                esp_restart();
+
+            } else if (strcmp(s_serial_buffer, "exit") == 0) {
+                ESP_LOGI(TAG, "Exiting serial command task.");
+                break; // Exit the task
+
+            } else if (strcmp(s_serial_buffer, "data") == 0) {
                 serial_comp_send(app_manager_get_latest_sensor_data_json());
+
+            } else if (strncmp(s_serial_buffer, "data stream", 11) == 0) {
+                if (strcmp(s_serial_buffer + 12, "start") == 0) {
+                    app_manager_set_serial_data_json_stream_active(true);
+                    ESP_LOGI(TAG, "Serial data JSON stream enabled.");
+                } else if (strcmp(s_serial_buffer + 12, "stop") == 0) {
+                    app_manager_set_serial_data_json_stream_active(false);
+                    ESP_LOGI(TAG, "Serial data JSON stream disabled.");
+                }
+
             } else if (strncmp(s_serial_buffer, "backlight", 9) == 0) {
                 if (strcmp(s_serial_buffer + 10, "on") == 0) {
                     lvgl_display_backlight(true);
                 } else if (strcmp(s_serial_buffer + 10, "off") == 0) {
                     lvgl_display_backlight(false);
                 }
+
             } else if (strncmp(s_serial_buffer, "webserver", 9) == 0) {
                     network_comp_toggle_web_server();
+
+            } else if (strncmp(s_serial_buffer, "network", 7) == 0) {
+                    if (strcmp(s_serial_buffer + 7 + 1, "on") == 0) {
+                        if (app_manager_get_network_active()) {
+                            ESP_LOGI(TAG, "Network is already connected.");
+                        } else {
+                            esp_err_t ret = network_comp_init();
+                            if (ret == ESP_OK) {
+                                ESP_LOGI(TAG, "Network component initialized.");
+                            } else {
+                                ESP_LOGE(TAG, "Failed to initialize network component: %s", esp_err_to_name(ret));
+                            }
+                        }
+                    } else if (strcmp(s_serial_buffer + 7 + 1, "off") == 0) {
+                        if (!app_manager_get_network_active()) {
+                            ESP_LOGI(TAG, "Network is already disconnected.");
+                        } else {
+                            esp_err_t ret = network_comp_deinit();
+                            if (ret == ESP_OK) {
+                                ESP_LOGI(TAG, "Network component deinitialized.");
+                            } else {
+                                ESP_LOGE(TAG, "Failed to deinitialize network component: %s", esp_err_to_name(ret));
+                            }
+                        }
+                    } else {
+                        ESP_LOGI(TAG, "Network status: %s", app_manager_get_network_active() ? "connected" : "disconnected");
+                    }
             } else {
                 ESP_LOGW(TAG, "Unknown command: '%s'", s_serial_buffer);
             }
@@ -332,7 +401,7 @@ void app_main(void) {
 
     if (DEBUG_RUN_TASKS) {
 
-        xTaskCreate(sensor_measurement_task,      "sensor_measurement_task",      2048, NULL, 5, NULL);
+        xTaskCreate(sensor_measurement_task,      "sensor_measurement_task",        4096, NULL, 5, NULL);
         xTaskCreate(update_sensor_display_task,     "update_sensor_display_task",   2048, NULL, 2, NULL);
         xTaskCreate(update_display_ipaddr_task,     "update_display_ipaddr_task",   2048, NULL, 2, NULL);
         //xTaskCreate(serial_command_task,          "serial_command_task",          2560, NULL, 3, NULL);

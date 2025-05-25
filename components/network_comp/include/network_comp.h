@@ -22,14 +22,31 @@ extern "C" {
  */
 esp_err_t network_comp_init(void);
 
+/**
+ * @brief Deinitializes the network component.
+ *
+ * This function releases any resources allocated by the network component and
+ * performs necessary cleanup operations. After calling this function, the network
+ * component should not be used unless it is reinitialized.
+ *
+ * @return
+ *     - ESP_OK on successful deinitialization
+ *     - Appropriate error code from esp_err_t on failure
+ */
+esp_err_t network_comp_deinit(void);
+
+/**
+ * @brief Toggles the state of the web server.
+ *
+ * This function starts the web server if it is currently stopped,
+ * or stops it if it is currently running.
+ *
+ * @return
+ *     - ESP_OK on success
+ *     - Appropriate error code from esp_err_t on failure
+ */
 esp_err_t network_comp_toggle_web_server(void);
 
-
-
-// Configuration constants
-// the wifi-related are in the wifi_manager.h
-#define CONFIG_BUTTON_GPIO     5       // Default GPIO for reset button
-#define CONFIG_BUTTON_PRESS_MS 3000    // Long press duration in milliseconds
 
 #ifdef __cplusplus
 }

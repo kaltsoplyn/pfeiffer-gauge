@@ -11,10 +11,33 @@ extern "C" {
 #define CONFIG_AP_IP_ADDR      "192.168.4.1"
 #define CONFIG_WEB_PORT        80
 
+
 /**
- * @brief Initialize WiFi basic checks
+ * @brief Initialize the Wi-Fi subsystem.
+ *
+ * This function sets up and configures the Wi-Fi hardware and software stack.
+ * It should be called before any Wi-Fi operations are performed.
+ *
+ * @return
+ *      - ESP_OK on successful initialization
+ *      - Appropriate esp_err_t error code otherwise
  */
-esp_err_t wifi_init(void);
+esp_err_t wifi_manager_wifi_init(void);
+
+
+/**
+ * @brief Deinitializes the Wi-Fi subsystem.
+ *
+ * This function releases all resources allocated for Wi-Fi operation and
+ * disables the Wi-Fi hardware. After calling this function, Wi-Fi functionality
+ * will no longer be available until it is re-initialized.
+ *
+ * @return
+ *      - ESP_OK: Success
+ *      - ESP_ERR_WIFI_NOT_INIT: Wi-Fi was not initialized
+ *      - ESP_FAIL: Other errors
+ */
+esp_err_t wifi_manager_wifi_deinit(void);
 
 /**
  * @brief Initialize WiFi in Access Point mode

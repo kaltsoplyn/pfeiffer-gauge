@@ -10,4 +10,5 @@ idf_component_register(SRCS "pfeiffer_gauge.c"
                             sensor_types
                             time_manager
                             serial_comp
+                            button_comp
                     INCLUDE_DIRS ".")

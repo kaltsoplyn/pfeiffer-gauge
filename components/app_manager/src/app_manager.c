@@ -49,8 +49,9 @@ esp_err_t app_manager_init(void) {
     s_app_config.display_update_interval_ms = DEFAULT_DISPLAY_UPDATE_INTERVAL_MS;
     s_app_config.data_buffer_size = DATA_BUFFER_SIZE;
     s_app_config.pressure_gauge_FS = DEFAULT_PRESSURE_GAUGE_FS;
-    s_app_config.serial_data_json_stream = DEFAULT_SERIAL_DATA_JSON_STREAM;
+    s_app_config.serial_data_json_stream_active = DEFAULT_SERIAL_DATA_JSON_STREAM_ACTIVE;
     s_app_config.web_server_active = DEFAULT_WEB_SERVER_ACTIVE;
+    s_app_config.network_active = DEFAULT_NETWORK_ACTIVE;
     s_app_config.mock_mode = DEFAULT_MOCK_MODE;
     s_app_config.adc_unit_handle = sensor_types_get_adc_unit_handle();
 
@@ -155,10 +156,10 @@ esp_err_t app_manager_set_pressure_gauge_FS(float fs) {
     return ESP_FAIL;
 }
 
-bool app_manager_get_serial_data_json_stream(void) { return s_app_config.serial_data_json_stream; }
-esp_err_t app_manager_set_serial_data_json_stream(bool stream_json) {
+bool app_manager_get_serial_data_json_stream_active(void) { return s_app_config.serial_data_json_stream_active; }
+esp_err_t app_manager_set_serial_data_json_stream_active(bool stream_json) {
     if (xSemaphoreTake(s_config_mutex, portMAX_DELAY) == pdTRUE) {
-        s_app_config.serial_data_json_stream = stream_json;
+        s_app_config.serial_data_json_stream_active = stream_json;
         xSemaphoreGive(s_config_mutex);
         ESP_LOGI(TAG, "Config: Latest sensor data set to%sstream in JSON format via serial.", stream_json ? "" : " NOT ");
         return ESP_OK;
@@ -173,6 +174,18 @@ esp_err_t app_manager_set_web_server_active(bool server_on) {
         s_app_config.web_server_active = server_on;
         xSemaphoreGive(s_config_mutex);
         ESP_LOGI(TAG, "Config: Web server %s.", server_on ? "ON" : "OFF");
+        return ESP_OK;
+    }
+    ESP_LOGE(TAG, "Error accessing config mutex [This should not happen]");
+    return ESP_FAIL;
+}
+
+bool app_manager_get_network_active(void) { return s_app_config.network_active; }
+esp_err_t app_manager_set_network_active(bool net_on) {
+    if (xSemaphoreTake(s_config_mutex, portMAX_DELAY) == pdTRUE) {
+        s_app_config.network_active = net_on;
+        xSemaphoreGive(s_config_mutex);
+        ESP_LOGI(TAG, "Config: Network %s.", net_on ? "ON" : "OFF");
         return ESP_OK;
     }
     ESP_LOGE(TAG, "Error accessing config mutex [This should not happen]");

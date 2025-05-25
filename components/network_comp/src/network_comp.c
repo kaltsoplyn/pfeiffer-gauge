@@ -1,27 +1,12 @@
 #include "network_comp.h"
 #include "esp_event.h"
 #include "esp_log.h"
-#include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
 
 static const char *TAG = "NetworkComp";
-static TimerHandle_t button_timer;
-static bool button_pressed = false;
 
-
-
-static void button_isr_handler(void *arg) {
-    xTimerStart(button_timer, 0);
-}
-
-static void button_timer_callback(TimerHandle_t xTimer) {
-    button_pressed = true;
-    ESP_LOGI(TAG, "Button long press detected - resetting WiFi credentials");
-    nvs_erase_wifi_creds();
-    esp_restart();
-}
 
 // static void wifi_event_handler(void *arg, esp_event_base_t event_base, 
 //                              int32_t event_id, void *event_data) {
@@ -47,7 +32,7 @@ esp_err_t network_comp_init() {
     ESP_LOGI(TAG, "NVS initialized");
     
     // Initialize WiFi
-    ret = wifi_init();
+    ret = wifi_manager_wifi_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init WiFi!\n%s", esp_err_to_name(ret));
         return ret;
@@ -125,38 +110,46 @@ esp_err_t network_comp_init() {
     // Only start web server if previous Wi-Fi setup steps didn't report a critical failure
     // or if we intend to start it anyway (e.g., for AP mode).
     // The current logic implies web server should start regardless.
-    esp_err_t web_server_ret = start_web_server();
-    if (web_server_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start web server!\n%s", esp_err_to_name(web_server_ret));
-        return web_server_ret; // Prioritize web server start error if Wi-Fi was OK
-    }
-    
-    // Initialize button for reset
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << CONFIG_BUTTON_GPIO),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_NEGEDGE,
-    };
-    ret = gpio_config(&io_conf);
+    ret = start_web_server();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to init GPIO!\n%s", esp_err_to_name(ret));
-        return ret;
-    }
-    
-    button_timer = xTimerCreate("button_timer", pdMS_TO_TICKS(CONFIG_BUTTON_PRESS_MS), pdFALSE, NULL, button_timer_callback);
-    if (button_timer == NULL) ret = ESP_FAIL;
-
-    ret = ret == ESP_OK ? gpio_install_isr_service(0) : ret;
-    ret = ret == ESP_OK ? gpio_isr_handler_add(CONFIG_BUTTON_GPIO, button_isr_handler, NULL) : ret;
-
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to init GPIO!\n%s", esp_err_to_name(ret));
-        return ret;
+        ESP_LOGE(TAG, "Failed to start web server!\n%s", esp_err_to_name(ret));
+        return ret; // Prioritize web server start error if Wi-Fi was OK
     }
 
+    app_manager_set_network_active(true);
+    ESP_LOGI(TAG, "Network Component initialized successfully.");
     return ESP_OK;
+}
+
+esp_err_t network_comp_deinit() {
+    ESP_LOGI(TAG, "Deinitializing Network Component...");
+    esp_err_t ret = ESP_OK;
+    esp_err_t op_ret;
+
+    // 1. Stop web server
+    op_ret = stop_web_server();
+    if (op_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to stop web server: %s", esp_err_to_name(op_ret));
+        ret = op_ret; // Report first error
+    } else {
+        ESP_LOGI(TAG, "Web server stopped.");
+    }
+
+    // 2. Deinitialize WiFi
+    op_ret = wifi_manager_wifi_deinit();
+    if (op_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to deinitialize WiFi: %s", esp_err_to_name(op_ret));
+        if (ret == ESP_OK) ret = op_ret;
+    } else {
+        ESP_LOGI(TAG, "WiFi deinitialized.");
+    }
+
+
+    ESP_LOGI(TAG, "Network Component deinitialization completed with status: %s", esp_err_to_name(ret));
+    if (ret == ESP_OK) {
+        app_manager_set_network_active(false);
+    }
+    return ret;
 }
 
 esp_err_t network_comp_toggle_web_server() {

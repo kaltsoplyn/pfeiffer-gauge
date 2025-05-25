@@ -10,8 +10,9 @@
 extern "C" {
 #endif
 
-#define DEFAULT_SERIAL_DATA_JSON_STREAM false
-#define DEFAULT_WEB_SERVER_ACTIVE       true
+#define DEFAULT_SERIAL_DATA_JSON_STREAM_ACTIVE     false
+#define DEFAULT_WEB_SERVER_ACTIVE                   true
+#define DEFAULT_NETWORK_ACTIVE                      true
 
 
 // --- Application Configuration ---
@@ -20,8 +21,9 @@ typedef struct {
     int display_update_interval_ms;     // Default: 1000, Min: 40
     int data_buffer_size;               // Default: 500
     float pressure_gauge_FS;            // Default: 100.0 (Full Scale in mbar)
-    bool serial_data_json_stream;       // Default: false
+    bool serial_data_json_stream_active;       // Default: false
     bool web_server_active;             // Default: true
+    bool network_active;                // Default: true
     bool mock_mode;                     // Default: false
     adc_oneshot_unit_handle_t adc_unit_handle; 
 } AppConfig_t;
@@ -60,11 +62,14 @@ int app_manager_get_data_buffer_size(void);
 float app_manager_get_pressure_gauge_FS(void);
 esp_err_t app_manager_set_pressure_gauge_FS(float fs);
 
-bool app_manager_get_serial_data_json_stream(void);
-esp_err_t app_manager_set_serial_data_json_stream(bool stream_json);
+bool app_manager_get_serial_data_json_stream_active(void);
+esp_err_t app_manager_set_serial_data_json_stream_active(bool stream_json);
 
 bool app_manager_get_web_server_active(void);
 esp_err_t app_manager_set_web_server_active(bool server_on);
+
+bool app_manager_get_network_active(void);
+esp_err_t app_manager_set_network_active(bool net_on);
 
 bool app_manager_get_mock_mode(void);
 void app_manager_set_mock_mode(bool enable);

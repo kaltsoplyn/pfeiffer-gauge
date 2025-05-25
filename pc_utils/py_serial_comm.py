@@ -6,7 +6,7 @@ import time
 from collections import deque
 
 # --- Configuration ---
-ESP_SERIAL_PORT = "COM6"  # <<<<<<< IMPORTANT: Change this to your ESP32-C6's COM port
+ESP_SERIAL_PORT = "COM6"  # <<<<<<< IMPORTANT: Use correct ESP32-C6 COM port
 BAUD_RATE = 115200
 MAX_LOG_SIZE = 1000 # Maximum number of data points to keep in memory
 

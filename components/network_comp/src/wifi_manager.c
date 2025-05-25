@@ -13,6 +13,9 @@ static esp_netif_t *ap_netif = NULL;
 static bool wifi_initialized = false;
 static bool s_should_connect_on_sta_start = false; // Flag to control auto-connection
 
+static esp_event_handler_instance_t instance_any_id;
+static esp_event_handler_instance_t instance_got_ip;
+
 // Event group to signal Wi-Fi connection events
 static EventGroupHandle_t wifi_event_group;
 const int WIFI_CONNECTED_BIT = BIT0;
@@ -22,7 +25,7 @@ const int WIFI_FAIL_BIT      = BIT1; // Could be from disconnect or timeout
 void wifi_event_handler(void* arg, esp_event_base_t event_base,
     int32_t event_id, void* event_data);
 
-esp_err_t wifi_init() {
+esp_err_t wifi_manager_wifi_init() {
     if (wifi_initialized) {
         ESP_LOGI(TAG, "WiFi already initialized.");
         return ESP_OK;
@@ -59,13 +62,13 @@ esp_err_t wifi_init() {
                                                         ESP_EVENT_ANY_ID,
                                                         &wifi_event_handler,
                                                         NULL,
-                                                        NULL) 
+                                                        &instance_any_id) 
                                                         : ret;
     ret = ret == ESP_OK ? esp_event_handler_instance_register(IP_EVENT,
                                                         IP_EVENT_STA_GOT_IP,
                                                         &wifi_event_handler,
                                                         NULL,
-                                                        NULL)
+                                                        &instance_got_ip)
                                                         : ret;
 
     // Note: You might need to unregister these if you implement deinitialization
@@ -80,11 +83,89 @@ esp_err_t wifi_init() {
     return ESP_OK;
 }
 
+esp_err_t wifi_manager_wifi_deinit(void) {
+    if (!wifi_initialized) {
+        ESP_LOGI(TAG, "WiFi already deinitialized or not initialized yet.");
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Deinitializing WiFi...");
+    esp_err_t ret = ESP_OK;
+    esp_err_t op_ret;
+
+    // 1. Disconnect STA if connected (best effort)
+    // esp_wifi_disconnect is safe to call even if not connected or not in STA mode.
+    op_ret = esp_wifi_disconnect();
+    if (op_ret != ESP_OK && op_ret != ESP_ERR_WIFI_NOT_STARTED && op_ret != ESP_ERR_WIFI_NOT_INIT) {
+        ESP_LOGW(TAG, "esp_wifi_disconnect failed: %s", esp_err_to_name(op_ret));
+        // Do not overwrite overall 'ret' yet, continue deinitialization
+    }
+
+    // 2. Stop WiFi (STA and AP)
+    op_ret = esp_wifi_stop();
+    if (op_ret != ESP_OK && op_ret != ESP_ERR_WIFI_NOT_INIT) { // ESP_ERR_WIFI_NOT_STARTED is not an error if already stopped
+        ESP_LOGW(TAG, "esp_wifi_stop failed: %s", esp_err_to_name(op_ret));
+        if (ret == ESP_OK) ret = op_ret;
+    }
+
+    // 3. Unregister event handlers
+    if (instance_any_id) {
+        op_ret = esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, instance_any_id);
+        if (op_ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to unregister WIFI_EVENT handler: %s", esp_err_to_name(op_ret));
+            if (ret == ESP_OK) ret = op_ret;
+        }
+        instance_any_id = NULL;
+    }
+    if (instance_got_ip) {
+        op_ret = esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, instance_got_ip);
+        if (op_ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to unregister IP_EVENT handler: %s", esp_err_to_name(op_ret));
+            if (ret == ESP_OK) ret = op_ret;
+        }
+        instance_got_ip = NULL;
+    }
+
+    // 4. Destroy netif instances (must be done before esp_wifi_deinit)
+    if (sta_netif) {
+        esp_netif_destroy(sta_netif);
+        sta_netif = NULL;
+    }
+    if (ap_netif) {
+        esp_netif_destroy(ap_netif);
+        ap_netif = NULL;
+    }
+
+    // 5. Deinitialize WiFi stack
+    op_ret = esp_wifi_deinit();
+    if (op_ret != ESP_OK) {
+        ESP_LOGW(TAG, "esp_wifi_deinit failed: %s", esp_err_to_name(op_ret));
+        if (ret == ESP_OK) ret = op_ret;
+    }
+
+    // 6. Delete event group
+    if (wifi_event_group) {
+        vEventGroupDelete(wifi_event_group);
+        wifi_event_group = NULL;
+    }
+
+    // 7. Delete default event loop and Deinitialize esp_netif (LwIP)
+    // These are typically called at the end of network deinitialization.
+    esp_event_loop_delete_default(); // Safe to call, returns ESP_ERR_INVALID_STATE if not init
+    esp_netif_deinit(); // Safe to call
+
+    wifi_initialized = false;
+    s_should_connect_on_sta_start = false;
+
+    ESP_LOGI(TAG, "WiFi deinitialization completed with status: %s", esp_err_to_name(ret));
+    return ret;
+}
+
 esp_err_t wifi_init_softap(void) {
     // When starting SoftAP, we generally don't want the STA part to auto-connect
     // unless explicitly told to by a subsequent wifi_connect_sta call.
     s_should_connect_on_sta_start = false;
-    if (!wifi_initialized) wifi_init();
+    if (!wifi_initialized) wifi_manager_wifi_init();
 
     // First create the AP interface
     // ap_netif should already be created in wifi_init()

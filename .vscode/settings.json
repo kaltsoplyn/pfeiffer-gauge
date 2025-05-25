@@ -19,7 +19,8 @@
         "string_view": "c",
         "usb_serial_jtag_vfs.h": "c",
         "format": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "gpio.h": "c"
     },
     "idf.flashType": "UART",
     "idf.customExtraVars": {
